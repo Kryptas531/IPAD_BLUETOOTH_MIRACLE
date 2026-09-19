@@ -17,13 +17,24 @@ trackpad + keyboard + shortcut-кнопки + Bluetooth state.
   чтением кода, см. docs/MVP.md; компиляция подтверждена CI — см. ниже).
 - P0/P1 (готово на стороне GitHub): репозиторий пользователя создан
   (`Kryptas531/IPAD_BLUETOOTH_MIRACLE`), всё запушено (local == remote ==
-  `0e2f8f4`, автор коммитов `Kryptas531 <konrybas@gmail.com>`; push через GCM
-  без gh). CI-сборка unsigned IPA: run #3 (head=0e2f8f4) **completed/success**
-  (bootstrap-фикс: `bash ci_scripts/ci_post_clone.sh` + условный пин Xcode).
-  Скачивание артефакта `btr-remote-unsigned-ipa` требует GitHub-аутентификации
-  (API без токена = 401) — скачать с страницы run'а в браузере или авторизовать gh.
-- P7–P9 (physical tests) — ждут: установить .ipa через SideStore на physical
-  iPad + тесты на Windows per docs/PHYSICAL_TEST.md.
+  `13a94f8`, автор коммитов `Kryptas531 <konrybas@gmail.com>`; gh авторизован,
+  push через gh-токен). CI-сборка unsigned IPA: run #5 (head=4583929) build
+  FAILED (6 swiftc-ошибок в TouchpadView.swift); run #6 (id=35475333345,
+  head=13a94f8) **completed/success** (фикс всех 6 ошибок = коммит 13a94f8).
+  Артефакт `btr-remote-unsigned-ipa` скачан через gh в
+  `.qwen/tmp/ipa-p2/BTRemote.ipa` (550 KB).
+- P2 (код + CI-сборка готовы, физический тест не проводился): WINDOWS NATIVE
+  INPUT SURFACE — метки Win/Ctrl/Alt/Shift/AltGr (HID-коды не менялись),
+  Direct Input с release-chord Ctrl+Alt+Backspace (клавиши chord перехватываются
+  приложением, в хост не уходят; страховочная кнопка Release Direct Input),
+  trackpad (1-палец move/tap=LMB/2-пальца scroll/2-finger tap=RMB/double-tap-hold
+  =drag), GAME (сырой относительный мышиный ввод), компактный switcher
+  GAME|TRACKPAD|TOUCH|DECK (TOUCH/DECK = «в разработке»), статус «BT ● KB ●»,
+  feedback нажатий. Отложено (кода нет): TOUCH-дигитайзер (риск дескрипторов),
+  диктовка, гиро.
+- P7–P9 (physical tests) — ждут: установить .ipa (`.qwen/tmp/ipa-p2/BTRemote.ipa`
+  — P2-сборка с зелёного CI run #6; P1 IPA = артефакт run #3) через SideStore на
+  physical iPad + тесты на Windows per docs/PHYSICAL_TEST.md.
 
 ## Hard constraints
 1. BLE/HID (HOGP) стек upstream НЕ менять без доказанной необходимости:
@@ -43,7 +54,7 @@ trackpad + keyboard + shortcut-кнопки + Bluetooth state.
    dynamic profiles, макросы, telemetry, аккаунты, cloud, process monitoring.
    Всё это Phase 2. Сейчас только: IPAD → BLE HID → WINDOWS.
 
-## Verification commands (Windows; Xcode/swift нет; gh установлен: `C:\Program Files\GitHub CLI\gh.exe`, ещё не авторизован)
+## Verification commands (Windows; Xcode/swift нет; gh установлен: `C:\Program Files\GitHub CLI\gh.exe`, авторизован — токен с write-доступом к репо)
 - `git status`, `git log --oneline -3`
 - чтение файлов (read_file/grep) — компиляция Swift на Windows недоступна
 - CI-статус удалённо: `curl -s "https://api.github.com/repos/Kryptas531/IPAD_BLUETOOTH_MIRACLE/actions/runs?per_page=5"` (репо публичное)
@@ -55,21 +66,24 @@ trackpad + keyboard + shortcut-кнопки + Bluetooth state.
 - [x] архитектура изучена; защищённая BLE-граница определена (docs)
 - [x] MVP UI (P2–P6) — уже присутствует в upstream; diff 0, правки Swift не
   требуются (решение LEAD: не менять неизмеримо проверенное вслепую)
-- [x] git: local == remote == `0e2f8f4`; все коммиты авторизованы как
-  `Kryptas531 <konrybas@gmail.com>` (почта пользователя для подписи); push
-  работает через GCM без gh-авторизации
+- [x] git: local == remote == `13a94f8`; все коммиты авторизованы как
+  `Kryptas531 <konrybas@gmail.com>` (почта пользователя для подписи); gh
+  авторизован, push через gh-токен (права: contents:read&write)
 - [x] CI собирает unsigned `.ipa` artifact: run #3 (head=0e2f8f4)
-  completed/success — сборка и упаковка прошли
-- [ ] artifact `btr-remote-unsigned-ipa` скачан (нужна gh-auth или загрузка
-  из браузера со страницы run'а — действие пользователя)
+  completed/success — P1; P2: run #5 (4583929) FAILED (6 swiftc-ошибок),
+  run #6 (35475333345, head=13a94f8) completed/success
+- [x] artifact `btr-remote-unsigned-ipa` скачан через gh с успешного run #6
+  в `.qwen/tmp/ipa-p2/BTRemote.ipa` (550 KB)
 - [ ] путь до физического теста пройден (docs/BUILD.md + docs/PHYSICAL_TEST.md;
-  проверку проходит пользователь на physical iPad + Windows)
+  проверку проходит пользователь на physical iPad + Windows; P2-сборка ждёт
+  в `.qwen/tmp/ipa-p2/BTRemote.ipa`)
 
 ## NEVER claim as verified
-- «build passes» — ВЕРИФИЦИРОВАНО: CI run #3 conclusion=success (проверка
-  через GitHub API, артефакт `btr-remote-unsigned-ipa` существует)
-- «IPA получен локально» — НЕ верифицировано: скачивание артефакта отдало
-  401 «Requires authentication» (нужна авторизация gh/браузер)
+- «build passes» — ВЕРИФИЦИРОВАНО: CI run #6 (id=35475333345, head=13a94f8)
+  conclusion=success — P2-код компилируется. (run #5 с head=4583929 был
+  FAILED: 6 swiftc-ошибок в TouchpadView, исправлены в 13a94f8)
+- «IPA получен локально» — ВЕРИФИЦИРОВАНО: скачан через gh с run #6 в
+  `.qwen/tmp/ipa-p2/BTRemote.ipa`; P2-фичи на устройстве НЕ проверялись
 - physical test (pairing/HID/keyboard/mouse) — только на physical iPad+Windows
 - acceptance test (Win+L → login → Alt+Tab → typing) — НЕ PASSED, пока не
   проверен пользователем
