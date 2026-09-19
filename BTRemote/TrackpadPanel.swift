@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TrackpadPanel: View {
     let hid: HIDInput
+    var mode: PadMode = .trackpad
 
     @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
     @AppStorage(AppSettings.scrollSensitivityKey) private var scrollSensitivity = AppSettings.defaultScrollSensitivity
@@ -13,7 +14,9 @@ struct TrackpadPanel: View {
         VStack(spacing: cellGap) {
             HStack(spacing: cellGap) {
                 surface
-                scrollColumn.frame(width: 46)
+                if mode == .trackpad {
+                    scrollColumn.frame(width: 46)
+                }
             }
             .frame(maxHeight: .infinity)
             mouseButtonsRow.frame(height: 52)
@@ -24,14 +27,28 @@ struct TrackpadPanel: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12).fill(groupFill)
             #if os(iOS)
-                TouchpadView(
-                    moveSensitivity: touchpadSensitivity,
-                    scrollSensitivity: scrollSensitivity,
-                    onMove: { hid.move(dx: $0, dy: $1) },
-                    onScroll: { hid.scroll($0) },
-                    onLeftClick: { Haptics.tap(); hid.click(.left) },
-                    onRightClick: { Haptics.tap(); hid.click(.right) }
-                )
+                if mode == .touch || mode == .deck {
+                    VStack(spacing: 8) {
+                        Image(systemName: "hammer.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.secondary)
+                        Text(L10n.Input.inDevelopment)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    TouchpadView(
+                        moveSensitivity: touchpadSensitivity,
+                        scrollSensitivity: scrollSensitivity,
+                        onMove: { hid.move(dx: $0, dy: $1) },
+                        onScroll: { hid.scroll($0) },
+                        onLeftClick: { Haptics.tap(); hid.click(.left) },
+                        onRightClick: { Haptics.tap(); hid.click(.right) },
+                        onDragDown: { Haptics.tap(); hid.sendMouse(MouseReport(buttons: .left)) },
+                        onDragMove: { hid.sendMouse(MouseReport(buttons: .left, dX: $0, dY: $1)) },
+                        onDragUp: { hid.sendMouse(.zero) }
+                    )
+                }
             #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,25 +83,25 @@ struct TrackpadPanel: View {
 
     private var mouseButtonsRow: some View {
         HStack(spacing: cellGap) {
-            mouseButton(.left, L10n.Mouse.leftButton)
-            mouseButton(.middle, L10n.Mouse.middleButton)
-            mouseButton(.right, L10n.Mouse.rightButton)
+            mouseButton(.left, icon: "cursorarrow.click", L10n.Mouse.leftButton)
+            mouseButton(.middle, icon: "smallcircle.filled.circle", L10n.Mouse.middleButton)
+            mouseButton(.right, icon: "cursorarrow.click.2", L10n.Mouse.rightButton)
         }
     }
 
-    private func mouseButton(_ button: MouseButtons, _ label: LocalizedStringKey) -> some View {
+    private func mouseButton(_ button: MouseButtons, icon: String, _ label: LocalizedStringKey) -> some View {
         HoldButton(
-            onPress: { hid.sendMouse(MouseReport(buttons: button)) },
+            onPress: { Haptics.tap(); hid.sendMouse(MouseReport(buttons: button)) },
             onRelease: { hid.sendMouse(.zero) },
             background: { RoundedRectangle(cornerRadius: 12).fill(groupFill) },
-            label: { Color.clear }
+            label: { Image(systemName: icon).font(.body) }
         )
         .accessibilityLabel(label)
     }
 
     private func scrollButton(_ icon: String, _ label: LocalizedStringKey, _ wheel: Int8) -> some View {
         HoldButton(
-            onPress: { hid.scroll(wheel) },
+            onPress: { Haptics.tap(); hid.scroll(wheel) },
             onRelease: {},
             background: { RoundedRectangle(cornerRadius: 12).fill(groupFill) },
             label: { Image(systemName: icon).font(.body) }

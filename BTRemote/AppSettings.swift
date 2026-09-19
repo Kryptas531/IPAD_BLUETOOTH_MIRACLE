@@ -11,6 +11,10 @@ enum AppSettings {
     static let liveTypingKey = "BTRemote.liveTyping"
     static let remoteModeKey = "BTRemote.remoteMode"
     static let advertisedNameKey = "BTRemote.advertisedName"
+    static let padModeKey = "BTRemote.padMode"
+    /// Direct Input release chord, stored as raw values (see ReleaseChord in DirectInputController).
+    static let releaseChordKeyKey = "BTRemote.releaseChordKey"
+    static let releaseChordModifiersKey = "BTRemote.releaseChordModifiers"
 
     static let maxAdvertisedNameLength = 26
 

@@ -13,6 +13,9 @@
         var onScroll: (Int8) -> Void
         var onLeftClick: () -> Void
         var onRightClick: () -> Void
+        var onDragDown: () -> Void = {}
+        var onDragMove: (Int8, Int8) -> Void = { _, _ in }
+        var onDragUp: () -> Void = {}
 
         func makeCoordinator() -> Coordinator {
             Coordinator()
@@ -42,7 +45,15 @@
             right.numberOfTouchesRequired = 2
             right.delegate = c
 
-            [move, scroll, left, right].forEach { view.addGestureRecognizer($0) }
+            // double-tap-hold drag: second touch held → LMB down; move; lift-off → LMB up
+            let drag = UILongPressGestureRecognizer(target: c, action: #selector(Coordinator.handleDrag(_:)))
+            drag.minimumNumberOfTouches = 1
+            drag.maximumNumberOfTouches = 1
+            drag.minimumPressDuration = 0.35
+            drag.delegate = c
+
+            let recognizers: [UIGestureRecognizer] = [move, scroll, left, right, drag]
+            recognizers.forEach { view.addGestureRecognizer($0) }
             return view
         }
 
@@ -54,6 +65,9 @@
             c.onScroll = onScroll
             c.onLeftClick = onLeftClick
             c.onRightClick = onRightClick
+            c.onDragDown = onDragDown
+            c.onDragMove = onDragMove
+            c.onDragUp = onDragUp
         }
 
         @MainActor
@@ -67,12 +81,49 @@
 
             private var scrollAccumulator: CGFloat = 0
             private let scrollStep: CGFloat = 6
+            private var dragging = false
 
             @objc func handleMove(_ pan: UIPanGestureRecognizer) {
                 guard let view = pan.view else { return }
                 let t = pan.translation(in: view)
-                onMove(HIDInput.clamp(t.x * moveSensitivity), HIDInput.clamp(t.y * moveSensitivity))
+                // HID MouseReport dX/dY are Int8 (±127): split larger deltas into
+                // several consecutive reports so fast swipes don't lose distance.
+                var remainingX = t.x * moveSensitivity
+                var remainingY = t.y * moveSensitivity
+                while abs(remainingX) > 127 || abs(remainingY) > 127 {
+                    let chunkX = remainingX > 0 ? min(127, remainingX) : max(-127, remainingX)
+                    let chunkY = remainingY > 0 ? min(127, remainingY) : max(-127, remainingY)
+                    if dragging {
+                        onDragMove(HIDInput.clamp(chunkX), HIDInput.clamp(chunkY))
+                    } else {
+                        onMove(HIDInput.clamp(chunkX), HIDInput.clamp(chunkY))
+                    }
+                    remainingX -= chunkX
+                    remainingY -= chunkY
+                }
+                if remainingX != 0 || remainingY != 0 {
+                    if dragging {
+                        onDragMove(HIDInput.clamp(remainingX), HIDInput.clamp(remainingY))
+                    } else {
+                        onMove(HIDInput.clamp(remainingX), HIDInput.clamp(remainingY))
+                    }
+                }
                 pan.setTranslation(.zero, in: view)
+            }
+
+            @objc func handleDrag(_ sender: UILongPressGestureRecognizer) {
+                switch sender.state {
+                case .began:
+                    Haptics.tap()
+                    dragging = true
+                    onDragDown()
+                case .ended, .cancelled, .failed:
+                    guard dragging else { break }
+                    dragging = false
+                    onDragUp()
+                default:
+                    break
+                }
             }
 
             @objc func handleScroll(_ pan: UIPanGestureRecognizer) {

@@ -330,6 +330,8 @@
         private var pressedKeys: Set<Keycode> = []
         private var pressedMouseButtons: MouseButtons = []
         private var modifiers: KeyboardModifiers = []
+        private var chordHeld: KeyboardModifiers = []
+        private var releaseChord: ReleaseChord = .defaultChord
         private var observers: [NSObjectProtocol] = []
 
         // GCMouse deltas are in points; tune on-device
@@ -337,6 +339,7 @@
         private static let scrollSensitivity: CGFloat = 1
 
         init() {
+            releaseChord = Self.loadReleaseChord()
             refreshDevicePresence()
             observeDevices()
         }
@@ -417,26 +420,40 @@
             }
         }
 
-        /// GCKeyCode raw values are HID usage IDs; 0xE0...0xE7 are modifier keys
+        /// GCKeyCode raw values are HID usage IDs; 0xE0...0xE7 are modifier keys.
+        /// Release-chord components are app-owned: intercepted here, never forwarded to the host.
         private func handleKey(raw: Int, pressed: Bool) {
             if (0xE0 ... 0xE7).contains(raw) {
                 let mod = KeyboardModifiers(rawValue: UInt8(1) << UInt8(raw - 0xE0))
+                if releaseChord.modifiers.contains(mod) {
+                    if pressed { chordHeld.insert(mod) } else { chordHeld.remove(mod) }
+                    return
+                }
                 if pressed { modifiers.insert(mod) } else { modifiers.remove(mod) }
+            } else if pressed, raw == Int(releaseChord.key.rawValue),
+                      chordHeld.isSuperset(of: releaseChord.modifiers) {
+                // full release chord pressed: app action (release Direct Input), key not forwarded
+                stop()
+                return
             } else if let key = Keycode(rawValue: UInt8(truncatingIfNeeded: raw)) {
                 if pressed { pressedKeys.insert(key) } else { pressedKeys.remove(key) }
             } else {
                 return
             }
-            if releaseComboHeld {
-                stop()
-                return
-            }
             sendKeyboard?(KeyboardReport(modifiers: modifiers, keys: Array(pressedKeys.prefix(6))))
         }
 
-        private var releaseComboHeld: Bool {
-            !modifiers.isDisjoint(with: [.leftCtrl, .rightCtrl]) &&
-                !modifiers.isDisjoint(with: [.leftAlt, .rightAlt])
+        /// Loads the user-configurable release chord; defaults to Ctrl+Alt+Backspace.
+        private static func loadReleaseChord() -> ReleaseChord {
+            let defaults = UserDefaults.standard
+            if let keyRaw = defaults.object(forKey: AppSettings.releaseChordKeyKey) as? Int,
+               let keyByte = UInt8(exactly: keyRaw),
+               let key = Keycode(rawValue: keyByte),
+               let modsRaw = defaults.object(forKey: AppSettings.releaseChordModifiersKey) as? Int,
+               let modsByte = UInt8(exactly: modsRaw) {
+                return ReleaseChord(key: key, modifiers: KeyboardModifiers(rawValue: modsByte))
+            }
+            return .defaultChord
         }
 
         private func handleMove(dx: Float, dy: Float) {
@@ -478,6 +495,16 @@
                 observers.append(token)
             }
         }
+    }
+
+    /// Direct Input release chord (configurable via the AppSettings raw-value keys;
+    /// default: Ctrl+Alt+Backspace). Chord components are app-owned and are
+    /// never forwarded to the host as HID key reports.
+    struct ReleaseChord: Sendable {
+        let key: Keycode
+        let modifiers: KeyboardModifiers
+
+        static let defaultChord = ReleaseChord(key: .backspace, modifiers: [.leftCtrl, .leftAlt])
     }
 
     /// iPadOS pointer lock hides system pointer so GameController receives raw deltas

@@ -358,6 +358,13 @@ struct SetupView: View {
                     Label(L10n.DirectInput.toggle, systemImage: "rectangle.and.hand.point.up.left")
                 }
                 .disabled(!directInput.hasInputDevice)
+                if directInput.isCapturing {
+                    // Safety touch button: release Direct Input without the physical chord
+                    Button(L10n.DirectInput.release) {
+                        Haptics.tap()
+                        directInput.stop()
+                    }
+                }
                 if let lastError = directInput.lastError {
                     Text(verbatim: lastError)
                         .font(.caption)

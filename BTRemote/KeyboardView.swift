@@ -2,12 +2,23 @@ import SwiftUI
 
 private let keyHeight: CGFloat = 44
 
+/// Touch→mouse surface mode on the Windows input screen (P2).
+/// `touch`/`deck` are placeholders for the next sub-iteration — not functional.
+enum PadMode: String {
+    case game
+    case trackpad
+    case touch
+    case deck
+}
+
 struct KeyboardView: View {
     let goToSetup: () -> Void
 
     @Environment(\.hid) private var hid
     @AppStorage(AppSettings.developerModeKey) private var developerMode = false
     @AppStorage(AppSettings.liveTypingKey) private var liveTyping = true
+    @AppStorage(AppSettings.padModeKey) private var padMode = PadMode.trackpad
+    @EnvironmentObject private var directInput: DirectInputController
     @State private var text = ""
     @State private var sent = ""
     @State private var resetting = false
@@ -28,19 +39,21 @@ struct KeyboardView: View {
             if geo.size.width > geo.size.height {
                 HStack(spacing: 12) {
                     VStack(spacing: 12) {
+                        controlBar
                         inputField
                         keyPanel
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity)
-                    TrackpadPanel(hid: hid).frame(width: geo.size.width * 0.42)
+                    TrackpadPanel(hid: hid, mode: padMode).frame(width: geo.size.width * 0.42)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 12) {
+                    controlBar
                     inputField
                     keyPanel
-                    TrackpadPanel(hid: hid).frame(maxHeight: .infinity)
+                    TrackpadPanel(hid: hid, mode: padMode).frame(maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -55,6 +68,61 @@ struct KeyboardView: View {
         #endif
     }
 
+    // Compact row: input-surface mode switcher + Direct Input release + connection status.
+    private var controlBar: some View {
+        HStack(spacing: 8) {
+            modeSwitcher
+            if directInput.isCapturing {
+                Button(L10n.DirectInput.release) {
+                    Haptics.tap()
+                    directInput.stop()
+                }
+                .buttonStyle(.bordered)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                statusChip(L10n.Input.btShort, on: hid.isConnected)
+                statusChip(L10n.Input.kbShort, on: hid.isActive)
+            }
+        }
+    }
+
+    private var modeSwitcher: some View {
+        HStack(spacing: 4) {
+            modeButton(L10n.Input.game, tag: .game)
+            modeButton(L10n.Input.trackpad, tag: .trackpad)
+            modeButton(L10n.Input.touch, tag: .touch, disabled: true)
+            modeButton(L10n.Input.deck, tag: .deck, disabled: true)
+        }
+    }
+
+    private func modeButton(_ label: LocalizedStringKey, tag: PadMode, disabled: Bool = false) -> some View {
+        Button {
+            Haptics.tap()
+            padMode = tag
+        } label: {
+            Text(label)
+                .font(.footnote)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(padMode == tag ? Color.accentColor : groupFill))
+                .foregroundColor(padMode == tag ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+    }
+
+    private func statusChip(_ label: LocalizedStringKey, on: Bool) -> some View {
+        HStack(spacing: 2) {
+            Text(label)
+            Text(verbatim: "●")
+                .foregroundColor(on ? .green : .secondary)
+        }
+        .font(.caption2)
+        .foregroundColor(.primary)
+    }
+
     @ViewBuilder
     private var accessoryBar: some View {
         accessoryKey("escape", L10n.Keyboard.esc) { press(.escape) }
@@ -63,7 +131,7 @@ struct KeyboardView: View {
             Haptics.tap()
             toggle(.leftCtrl)
         } label: {
-            Image(systemName: "control")
+            Text(L10n.Keyboard.ctrl)
                 .foregroundStyle(mods.contains(.leftCtrl) ? Color.accentColor : Color.primary)
         }
         .accessibilityLabel(L10n.Keyboard.ctrl)
@@ -179,25 +247,28 @@ struct KeyboardView: View {
         ]
     }
 
+    // Windows-layout labels (Win / Ctrl / Alt / Shift): the host is Windows and the
+    // physical keyboard attached to the iPad is Windows-layout. HID keycodes are
+    // unchanged (leftGUI = Win, leftCtrl = Ctrl, leftAlt = Alt, leftShift = Shift).
     private var row2: [KeyCap] {
         [
-            KeyCap(.symbol("shift"), L10n.Keyboard.shift, .modifier(.leftShift)),
-            KeyCap(.symbol("command"), L10n.Keyboard.meta, .modifier(.leftGUI)),
+            KeyCap(.text(L10n.Keyboard.shift), L10n.Keyboard.shift, .modifier(.leftShift)),
+            KeyCap(.text(L10n.Keyboard.win), L10n.Keyboard.win, .modifier(.leftGUI)),
             KeyCap(.symbol("arrow.left"), L10n.Keyboard.left, .key(.leftArrow)),
             KeyCap(.symbol("arrow.down"), L10n.Keyboard.down, .key(.downArrow)),
             KeyCap(.symbol("arrow.right"), L10n.Keyboard.right, .key(.rightArrow)),
-            KeyCap(.symbol("command"), L10n.Keyboard.meta, .modifier(.rightGUI)),
-            KeyCap(.symbol("shift"), L10n.Keyboard.shift, .modifier(.rightShift))
+            KeyCap(.text(L10n.Keyboard.win), L10n.Keyboard.win, .modifier(.rightGUI)),
+            KeyCap(.text(L10n.Keyboard.shift), L10n.Keyboard.shift, .modifier(.rightShift))
         ]
     }
 
     private var row3: [KeyCap] {
         [
-            KeyCap(.symbol("control"), L10n.Keyboard.ctrl, .modifier(.leftCtrl)),
-            KeyCap(.symbol("option"), L10n.Keyboard.alt, .modifier(.leftAlt)),
+            KeyCap(.text(L10n.Keyboard.ctrl), L10n.Keyboard.ctrl, .modifier(.leftCtrl)),
+            KeyCap(.text(L10n.Keyboard.alt), L10n.Keyboard.alt, .modifier(.leftAlt)),
             KeyCap(.blank, weight: 3, L10n.Keyboard.space, .key(.space)),
             KeyCap(.text(L10n.Keyboard.altGr), L10n.Keyboard.altGr, .modifier(.rightAlt)),
-            KeyCap(.symbol("control"), L10n.Keyboard.ctrl, .modifier(.rightCtrl))
+            KeyCap(.text(L10n.Keyboard.ctrl), L10n.Keyboard.ctrl, .modifier(.rightCtrl))
         ]
     }
 
@@ -376,5 +447,6 @@ private final class KeyTypist: ObservableObject {
 #if DEBUG
     #Preview {
         KeyboardView(goToSetup: {})
+            .environmentObject(DirectInputController())
     }
 #endif

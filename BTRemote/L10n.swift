@@ -357,6 +357,41 @@ extension L10n {
         static var space: LocalizedStringKey {
             "keyboard.space"
         }
+
+        static var win: LocalizedStringKey {
+            "keyboard.win"
+        }
+    }
+
+    /// Windows native input surface modes (P2). `touch`/`deck` are not implemented yet.
+    enum Input {
+        static var game: LocalizedStringKey {
+            "input.game"
+        }
+
+        static var trackpad: LocalizedStringKey {
+            "input.trackpad"
+        }
+
+        static var touch: LocalizedStringKey {
+            "input.touch"
+        }
+
+        static var deck: LocalizedStringKey {
+            "input.deck"
+        }
+
+        static var inDevelopment: LocalizedStringKey {
+            "input.in_development"
+        }
+
+        static var btShort: LocalizedStringKey {
+            "input.bt_short"
+        }
+
+        static var kbShort: LocalizedStringKey {
+            "input.kb_short"
+        }
     }
 
     enum DirectInput {
@@ -374,6 +409,10 @@ extension L10n {
 
         static var iosNoDevice: LocalizedStringKey {
             "direct_input.ios_no_device"
+        }
+
+        static var release: LocalizedStringKey {
+            "direct_input.release"
         }
 
         static var releaseHintString: String {
