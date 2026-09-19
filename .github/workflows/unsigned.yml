@@ -22,8 +22,11 @@ jobs:
         env:
           CI_PRIMARY_REPOSITORY_PATH: ${{ github.workspace }}
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
-          ci_scripts/ci_post_clone.sh
+          if [ -d /Applications/Xcode_26.3.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app
+          fi
+          xcode-select -p
+          bash ci_scripts/ci_post_clone.sh
 
       - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
         run: |
