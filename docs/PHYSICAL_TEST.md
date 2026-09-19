@@ -42,7 +42,8 @@
 пройден → MVP доказан.
 
 ## Статус
-- automated/build verification: НЕ проводилась (Windows, нет Xcode; CI ещё не
-  запускался — push ждёт GitHub-доступ пользователя)
+- automated/build verification: ВЕРИФИЦИРОВАНО через CI — run #6
+  (id=35475333345, head=13a94f8) completed/success (P2-код); unsigned `.ipa`
+  скачан в `.qwen/tmp/ipa-p2/BTRemote.ipa`
 - physical verification: НЕ проводилась (нужен physical iPad + Windows)
 - **acceptance test: NOT PASSED** (не проверялся)
