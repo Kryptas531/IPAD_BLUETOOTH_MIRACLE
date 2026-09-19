@@ -1,0 +1,54 @@
+name: Build unsigned IPA
+
+# Derived MVP (see QWEN.md): Windows-first pipeline.
+# Reuses the existing upstream build path (build.sh / ci_scripts commands):
+# xcodegen -> xcodebuild, CODE_SIGNING_ALLOWED=NO (no Apple signing), zip
+# Payload -> BTRemote.ipa, uploaded as a downloadable artifact.
+# The existing build.yml (signed release via fastlane with the upstream
+# author's Apple account) is kept untouched.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-unsigned:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Bootstrap (xcodegen + Bluetooth json resources)
+        env:
+          CI_PRIMARY_REPOSITORY_PATH: ${{ github.workspace }}
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          ci_scripts/ci_post_clone.sh
+
+      - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
+        run: |
+          set -o pipefail
+          xcodebuild \
+              -project BTRemote.xcodeproj \
+              -scheme BTRemote \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination "generic/platform=iOS" \
+              -derivedDataPath .build/DerivedData \
+              CODE_SIGNING_ALLOWED=NO \
+              build | xcbeautify
+
+      - name: Package unsigned ipa (Payload zip; unsigned, re-sign on device via SideStore)
+        run: |
+          rm -rf .build/Payload
+          mkdir -p .build/Payload build
+          cp -R .build/DerivedData/Build/Products/Release-iphoneos/BTRemote.app .build/Payload/
+          cd .build/
+          /usr/bin/zip -qry ../build/BTRemote.ipa Payload
+
+      - name: Upload unsigned ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: btr-remote-unsigned-ipa
+          path: build/BTRemote.ipa
+          if-no-files-found: error
