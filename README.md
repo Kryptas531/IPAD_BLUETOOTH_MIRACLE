@@ -75,3 +75,7 @@ This Bluetooth HID stack is manually developed over weeks of working around a li
 [AGPL-3.0-only](LICENSE). Commercial license is available upon request.
 
 Bundling this software into closed-source commercial applications, proprietary products, or App Store distributions without an explicit commercial license is copyright infringement.
+
+## About this repository (derived MVP)
+
+This is a modified derivative of [jqssun/darwin-bt-remote](https://github.com/jqssun/darwin-bt-remote) (AGPL-3.0-only, `LICENSE` preserved unchanged), re-targeted as an MVP: iPad as a Bluetooth HID-over-GATT (HOGP) keyboard+mouse remote for Windows. Git history restarted clean (baseline commit `95b69a1` = upstream import). Changes are additive only: `QWEN.md`, `.qwen/agents/`, `docs/` (MVP/ARCHITECTURE/BUILD/PHYSICAL_TEST), `.github/workflows/unsigned.yml` (unsigned IPA CI build for free sideload). Upstream Swift/BLE/HID files are unmodified. [modified 2026-09-19, Qwen Code lead agent]
