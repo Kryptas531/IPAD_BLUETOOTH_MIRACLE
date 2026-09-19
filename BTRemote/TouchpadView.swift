@@ -47,8 +47,7 @@
 
             // double-tap-hold drag: second touch held → LMB down; move; lift-off → LMB up
             let drag = UILongPressGestureRecognizer(target: c, action: #selector(Coordinator.handleDrag(_:)))
-            drag.minimumNumberOfTouches = 1
-            drag.maximumNumberOfTouches = 1
+            drag.numberOfTouchesRequired = 1
             drag.minimumPressDuration = 0.35
             drag.delegate = c
 
@@ -78,6 +77,9 @@
             var onScroll: (Int8) -> Void = { _ in }
             var onLeftClick: () -> Void = {}
             var onRightClick: () -> Void = {}
+            var onDragDown: () -> Void = {}
+            var onDragMove: (Int8, Int8) -> Void = { _, _ in }
+            var onDragUp: () -> Void = {}
 
             private var scrollAccumulator: CGFloat = 0
             private let scrollStep: CGFloat = 6
