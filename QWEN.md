@@ -13,10 +13,17 @@ trackpad + keyboard + shortcut-кнопки + Bluetooth state.
 
 ## Текущий milestone
 - M0 (готово): upstream imported; чистая git-история; baseline commit `95b69a1`.
-- M1 (в работе): MVP UI P2–P6 — фактически УЖЕ готов в upstream (проверено
-  чтением кода, см. docs/MVP.md; компиляция не проверялась — Windows-машина).
-- P0/P1 (CI, unsigned IPA artifact) + P7–P9 (physical tests) — ждут действий
-  пользователя (создать GitHub-репозиторий + push/CI; physical iPad + Windows).
+- M1 (готово): MVP UI P2–P6 — фактически УЖЕ готов в upstream (проверено
+  чтением кода, см. docs/MVP.md; компиляция подтверждена CI — см. ниже).
+- P0/P1 (готово на стороне GitHub): репозиторий пользователя создан
+  (`Kryptas531/IPAD_BLUETOOTH_MIRACLE`), всё запушено (local == remote ==
+  `0e2f8f4`, автор коммитов `Kryptas531 <konrybas@gmail.com>`; push через GCM
+  без gh). CI-сборка unsigned IPA: run #3 (head=0e2f8f4) **completed/success**
+  (bootstrap-фикс: `bash ci_scripts/ci_post_clone.sh` + условный пин Xcode).
+  Скачивание артефакта `btr-remote-unsigned-ipa` требует GitHub-аутентификации
+  (API без токена = 401) — скачать с страницы run'а в браузере или авторизовать gh.
+- P7–P9 (physical tests) — ждут: установить .ipa через SideStore на physical
+  iPad + тесты на Windows per docs/PHYSICAL_TEST.md.
 
 ## Hard constraints
 1. BLE/HID (HOGP) стек upstream НЕ менять без доказанной необходимости:
@@ -36,9 +43,10 @@ trackpad + keyboard + shortcut-кнопки + Bluetooth state.
    dynamic profiles, макросы, telemetry, аккаунты, cloud, process monitoring.
    Всё это Phase 2. Сейчас только: IPAD → BLE HID → WINDOWS.
 
-## Verification commands (Windows; Xcode/swift/gh НЕТ)
+## Verification commands (Windows; Xcode/swift нет; gh установлен: `C:\Program Files\GitHub CLI\gh.exe`, ещё не авторизован)
 - `git status`, `git log --oneline -3`
 - чтение файлов (read_file/grep) — компиляция Swift на Windows недоступна
+- CI-статус удалённо: `curl -s "https://api.github.com/repos/Kryptas531/IPAD_BLUETOOTH_MIRACLE/actions/runs?per_page=5"` (репо публичное)
 
 ## Definition of Done (сессии)
 - [x] repo существует; upstream imported; LICENSE/attribution сохранены
@@ -47,13 +55,21 @@ trackpad + keyboard + shortcut-кнопки + Bluetooth state.
 - [x] архитектура изучена; защищённая BLE-граница определена (docs)
 - [x] MVP UI (P2–P6) — уже присутствует в upstream; diff 0, правки Swift не
   требуются (решение LEAD: не менять неизмеримо проверенное вслепую)
-- [ ] CI собирает unsigned `.ipa` artifact (ждёт push пользователем)
-- [ ] путь до физического теста описан (docs/BUILD.md + docs/PHYSICAL_TEST.md;
+- [x] git: local == remote == `0e2f8f4`; все коммиты авторизованы как
+  `Kryptas531 <konrybas@gmail.com>` (почта пользователя для подписи); push
+  работает через GCM без gh-авторизации
+- [x] CI собирает unsigned `.ipa` artifact: run #3 (head=0e2f8f4)
+  completed/success — сборка и упаковка прошли
+- [ ] artifact `btr-remote-unsigned-ipa` скачан (нужна gh-auth или загрузка
+  из браузера со страницы run'а — действие пользователя)
+- [ ] путь до физического теста пройден (docs/BUILD.md + docs/PHYSICAL_TEST.md;
   проверку проходит пользователь на physical iPad + Windows)
 
 ## NEVER claim as verified
-- «build passes» — только при фактических CI-логах
-- «IPA created» — только если артефакт реально получен
+- «build passes» — ВЕРИФИЦИРОВАНО: CI run #3 conclusion=success (проверка
+  через GitHub API, артефакт `btr-remote-unsigned-ipa` существует)
+- «IPA получен локально» — НЕ верифицировано: скачивание артефакта отдало
+  401 «Requires authentication» (нужна авторизация gh/браузер)
 - physical test (pairing/HID/keyboard/mouse) — только на physical iPad+Windows
 - acceptance test (Win+L → login → Alt+Tab → typing) — НЕ PASSED, пока не
   проверен пользователем
