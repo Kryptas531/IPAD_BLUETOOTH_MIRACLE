@@ -279,7 +279,9 @@ struct KeyboardView: View {
             Haptics.tap()
             switch key.action {
             case let .key(code): press(code)
-            case let .modifier(mod): toggle(mod)
+            case let .modifier(mod):
+                typist.send = hid.sendKeyboard
+                typist.enqueue([KeyboardReport(modifiers: mod, keys: []), .zero])
             }
         } label: {
             keyLabel(key.label)
