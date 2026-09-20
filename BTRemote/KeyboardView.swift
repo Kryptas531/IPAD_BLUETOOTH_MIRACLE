@@ -17,6 +17,7 @@ struct KeyboardView: View {
     @AppStorage(AppSettings.developerModeKey) private var developerMode = false
     @AppStorage(AppSettings.liveTypingKey) private var liveTyping = true
     @AppStorage(AppSettings.padModeKey) private var padMode = PadMode.trackpad
+    @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
     @EnvironmentObject private var directInput: DirectInputController
     @EnvironmentObject private var lowEnergy: HIDPeripheral
     @State private var text = ""
@@ -92,7 +93,8 @@ struct KeyboardView: View {
                         .background(.thinMaterial.opacity(0.94))
                     }
                 }
-            } else {
+            }
+        } else {
                 VStack(spacing: 12) {
                     controlBar
                     inputField
