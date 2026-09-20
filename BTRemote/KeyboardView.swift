@@ -37,17 +37,15 @@ struct KeyboardView: View {
     private var editor: some View {
         GeometryReader { geo in
             if geo.size.width > geo.size.height {
-                HStack(spacing: 12) {
-                    VStack(spacing: 12) {
-                        controlBar
-                        inputField
-                        keyPanel
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity)
-                    TrackpadPanel(hid: hid, mode: padMode).frame(width: geo.size.width * 0.42)
+                // Landscape: physical Windows keyboard attached to iPad — touch zone
+                // occupies the whole screen; compact switcher/status/release overlays on top.
+                ZStack(alignment: .top) {
+                    TrackpadPanel(hid: hid, mode: padMode)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    controlBar
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 12) {
                     controlBar
