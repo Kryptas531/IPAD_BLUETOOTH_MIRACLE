@@ -72,8 +72,8 @@ final class PerformanceMetrics: ObservableObject {
         snapshot.pendingMouseCount = count
     }
 
-    func recordLostDelta(_ count: Int = 1) {
-        snapshot.lostDelta += count
+    func recordLostDelta(_ count: Int32 = 1) {
+        snapshot.lostDelta += Int(count)
     }
 
     private func refresh() {
