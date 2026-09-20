@@ -3,23 +3,26 @@ import SwiftUI
 struct TrackpadPanel: View {
     let hid: HIDInput
     var mode: PadMode = .trackpad
+    var metrics: PerformanceMetrics?
 
     @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
     @AppStorage(AppSettings.scrollSensitivityKey) private var scrollSensitivity = AppSettings.defaultScrollSensitivity
+    @AppStorage(AppSettings.developerModeKey) private var developerMode = false
     #if os(macOS)
         @State private var dragOffset: CGSize = .zero
     #endif
 
     var body: some View {
-        VStack(spacing: cellGap) {
-            HStack(spacing: cellGap) {
+        ZStack(alignment: .topTrailing) {
+            if mode == .deck {
+                DeckPanel(hid: hid)
+            } else {
                 surface
-                if mode == .trackpad {
-                    scrollColumn.frame(width: 46)
-                }
             }
-            .frame(maxHeight: .infinity)
-            mouseButtonsRow.frame(height: 52)
+            if mode == .game, developerMode, let metrics {
+                PerformanceOverlay(metrics: metrics)
+                    .padding(12)
+            }
         }
     }
 
@@ -27,7 +30,7 @@ struct TrackpadPanel: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12).fill(groupFill)
             #if os(iOS)
-                if mode == .touch || mode == .deck {
+                if mode == .touch {
                     VStack(spacing: 8) {
                         Image(systemName: "hammer.fill")
                             .font(.system(size: 44))
@@ -40,6 +43,8 @@ struct TrackpadPanel: View {
                     TouchpadView(
                         moveSensitivity: touchpadSensitivity,
                         scrollSensitivity: scrollSensitivity,
+                        mode: mode,
+                        metrics: metrics,
                         onMove: { hid.move(dx: $0, dy: $1) },
                         onScroll: { hid.scroll($0) },
                         onLeftClick: { Haptics.tap(); hid.click(.left) },
@@ -48,6 +53,7 @@ struct TrackpadPanel: View {
                         onDragMove: { hid.sendMouse(MouseReport(buttons: .left, dX: $0, dY: $1)) },
                         onDragUp: { hid.sendMouse(.zero) }
                     )
+                    .id(mode)
                 }
             #endif
         }
@@ -70,42 +76,27 @@ struct TrackpadPanel: View {
         #endif
     }
 
-    private var scrollAmount: Int8 {
-        max(1, HIDInput.clamp(CGFloat(3 * scrollSensitivity)))
-    }
+}
 
-    private var scrollColumn: some View {
-        VStack(spacing: cellGap) {
-            scrollButton("arrow.up", L10n.Mouse.wheelUp, scrollAmount)
-            scrollButton("arrow.down", L10n.Mouse.wheelDown, -scrollAmount)
+private struct PerformanceOverlay: View {
+    @ObservedObject var metrics: PerformanceMetrics
+
+    var body: some View {
+        let value = metrics.snapshot
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Touch event: \(Int(value.touchEventsHz)) Hz")
+            Text("Raw samples: \(Int(value.rawSamplesHz)) Hz")
+            Text("Mouse generated: \(Int(value.generatedReportsHz)) Hz")
+            Text("BLE accepted: \(Int(value.acceptedReportsHz)) Hz")
+            Text("Backpressure: \(value.backpressurePerSecond)/s")
+            Text("Coalesced: \(value.coalescedMousePerSecond)/s")
+            Text("Pending: \(value.pendingMouseCount)")
+            Text("Lost delta: \(value.lostDelta)")
+            Text(String(format: "Avg interval: %.1f ms", value.averageSampleIntervalMs))
+            Text(String(format: "Max interval: %.1f ms", value.maxSampleIntervalMs))
         }
-    }
-
-    private var mouseButtonsRow: some View {
-        HStack(spacing: cellGap) {
-            mouseButton(.left, icon: "cursorarrow.click", L10n.Mouse.leftButton)
-            mouseButton(.middle, icon: "smallcircle.filled.circle", L10n.Mouse.middleButton)
-            mouseButton(.right, icon: "cursorarrow.click.2", L10n.Mouse.rightButton)
-        }
-    }
-
-    private func mouseButton(_ button: MouseButtons, icon: String, _ label: LocalizedStringKey) -> some View {
-        HoldButton(
-            onPress: { Haptics.tap(); hid.sendMouse(MouseReport(buttons: button)) },
-            onRelease: { hid.sendMouse(.zero) },
-            background: { RoundedRectangle(cornerRadius: 12).fill(groupFill) },
-            label: { Image(systemName: icon).font(.body) }
-        )
-        .accessibilityLabel(label)
-    }
-
-    private func scrollButton(_ icon: String, _ label: LocalizedStringKey, _ wheel: Int8) -> some View {
-        HoldButton(
-            onPress: { Haptics.tap(); hid.scroll(wheel) },
-            onRelease: {},
-            background: { RoundedRectangle(cornerRadius: 12).fill(groupFill) },
-            label: { Image(systemName: icon).font(.body) }
-        )
-        .accessibilityLabel(label)
+        .font(.system(size: 11, design: .monospaced))
+        .padding(8)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }

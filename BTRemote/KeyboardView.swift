@@ -2,8 +2,7 @@ import SwiftUI
 
 private let keyHeight: CGFloat = 44
 
-/// Touch→mouse surface mode on the Windows input screen (P2).
-/// `touch`/`deck` are placeholders for the next sub-iteration — not functional.
+/// Touch-to-mouse surface mode on the Windows input screen.
 enum PadMode: String {
     case game
     case trackpad
@@ -19,9 +18,12 @@ struct KeyboardView: View {
     @AppStorage(AppSettings.liveTypingKey) private var liveTyping = true
     @AppStorage(AppSettings.padModeKey) private var padMode = PadMode.trackpad
     @EnvironmentObject private var directInput: DirectInputController
+    @EnvironmentObject private var lowEnergy: HIDPeripheral
     @State private var text = ""
     @State private var sent = ""
     @State private var resetting = false
+    @State private var gameChromeVisible = true
+    @State private var showKeyboard = false
     @State private var mods: KeyboardModifiers = []
     @FocusState private var focused: Bool
     @StateObject private var typist = KeyTypist()
@@ -37,27 +39,77 @@ struct KeyboardView: View {
     private var editor: some View {
         GeometryReader { geo in
             if geo.size.width > geo.size.height {
-                // Landscape: physical Windows keyboard attached to iPad — touch zone
-                // occupies the whole screen; compact switcher/status/release overlays on top.
+            if padMode == .game {
                 ZStack(alignment: .top) {
-                    TrackpadPanel(hid: hid, mode: padMode)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    controlBar
+                    TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics)
+                    if gameChromeVisible {
+                        VStack(spacing: 4) {
+                            controlBar
+                            Spacer()
+                            bottomStrip
+                            HStack(spacing: 6) {
+                                Text(L10n.Settings.trackingSpeed).font(.caption2)
+                                Slider(value: $touchpadSensitivity, in: AppSettings.pointerSensitivityRange)
+                                    .frame(maxWidth: 180)
+                                Toggle(isOn: $developerMode) {
+                                    Text(L10n.Settings.developerMode).font(.caption2)
+                                }
+                                .fixedSize()
+                            }
+                            if showKeyboard {
+                                inputField
+                                keyPanel
+                            }
+                        }
                         .padding(.horizontal, 8)
-                        .padding(.top, 4)
+                        .padding(.vertical, 4)
+                        .background(.thinMaterial.opacity(0.88))
+                    } else {
+                        Button("•••") {
+                            gameChromeVisible = true
+                        }
+                        .font(.caption2)
+                        .buttonStyle(.bordered)
+                        .padding(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else {
+                ZStack(alignment: .bottom) {
+                    VStack(spacing: 4) {
+                        controlBar
+                            .padding(.horizontal, 8)
+                        TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        bottomStrip
+                    }
+                    if showKeyboard {
+                        VStack(spacing: 6) {
+                            inputField
+                            keyPanel
+                        }
+                        .padding(8)
+                        .background(.thinMaterial.opacity(0.94))
+                    }
                 }
             } else {
                 VStack(spacing: 12) {
                     controlBar
                     inputField
                     keyPanel
-                    TrackpadPanel(hid: hid, mode: padMode).frame(maxHeight: .infinity)
+                    TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics).frame(maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .padding()
         .onChange(of: liveTyping) { _ in clear() }
+        .task(id: padMode) {
+            gameChromeVisible = true
+            guard padMode == .game else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if !Task.isCancelled { gameChromeVisible = false }
+        }
         #if os(iOS)
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .toolbar {
@@ -79,8 +131,8 @@ struct KeyboardView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 6) {
-                statusChip(L10n.Input.btShort, on: hid.isConnected)
-                statusChip(L10n.Input.kbShort, on: hid.isActive)
+                statusDot("dot.radiowaves.left.and.right", on: hid.isConnected)
+                statusDot("keyboard", on: hid.isActive)
             }
         }
     }
@@ -90,7 +142,7 @@ struct KeyboardView: View {
             modeButton(L10n.Input.game, tag: .game)
             modeButton(L10n.Input.trackpad, tag: .trackpad)
             modeButton(L10n.Input.touch, tag: .touch, disabled: true)
-            modeButton(L10n.Input.deck, tag: .deck, disabled: true)
+            modeButton(L10n.Input.deck, tag: .deck)
         }
     }
 
@@ -111,14 +163,34 @@ struct KeyboardView: View {
         .opacity(disabled ? 0.4 : 1)
     }
 
-    private func statusChip(_ label: LocalizedStringKey, on: Bool) -> some View {
-        HStack(spacing: 2) {
-            Text(label)
-            Text(verbatim: "●")
-                .foregroundColor(on ? .green : .secondary)
+    private func statusDot(_ symbol: String, on: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.caption)
+            .foregroundStyle(on ? Color.green : Color.secondary)
+            .accessibilityValue(on ? "Connected" : "Disconnected")
+    }
+
+    private var bottomStrip: some View {
+        HStack(spacing: 6) {
+            keyCapButton(KeyCap(.text(L10n.Keyboard.ctrl), L10n.Keyboard.ctrl, .modifier(.leftCtrl)))
+            keyCapButton(KeyCap(.text(L10n.Keyboard.win), L10n.Keyboard.win, .modifier(.leftGUI)))
+            keyCapButton(KeyCap(.text(L10n.Keyboard.alt), L10n.Keyboard.alt, .modifier(.leftAlt)))
+            keyCapButton(KeyCap(.text(L10n.Keyboard.shift), L10n.Keyboard.shift, .modifier(.leftShift)))
+            Spacer(minLength: 8)
+            keyCapButton(KeyCap(.text(L10n.Keyboard.esc), L10n.Keyboard.esc, .key(.escape)))
+            keyCapButton(KeyCap(.text(L10n.Keyboard.tab), L10n.Keyboard.tab, .key(.tab)))
+            keyCapButton(KeyCap(.text(L10n.Keyboard.enter), L10n.Keyboard.enter, .key(.return)))
+            Button {
+                Haptics.tap()
+                showKeyboard.toggle()
+                if showKeyboard { focused = true }
+            } label: {
+                Image(systemName: "keyboard")
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+            }
         }
-        .font(.caption2)
-        .foregroundColor(.primary)
+        .frame(height: 34)
     }
 
     @ViewBuilder
@@ -177,6 +249,7 @@ struct KeyboardView: View {
             keyRow(row1)
             keyRow(row2)
             keyRow(row3)
+            keyRow(row4)
         }
     }
 
@@ -267,6 +340,17 @@ struct KeyboardView: View {
             KeyCap(.blank, weight: 3, L10n.Keyboard.space, .key(.space)),
             KeyCap(.text(L10n.Keyboard.altGr), L10n.Keyboard.altGr, .modifier(.rightAlt)),
             KeyCap(.text(L10n.Keyboard.ctrl), L10n.Keyboard.ctrl, .modifier(.rightCtrl))
+        ]
+    }
+
+    private var row4: [KeyCap] {
+        [
+            KeyCap(.text(L10n.Keyboard.insert), L10n.Keyboard.insert, .key(.insert)),
+            KeyCap(.text(L10n.Keyboard.delete), L10n.Keyboard.delete, .key(.delete)),
+            KeyCap(.text(L10n.Keyboard.home), L10n.Keyboard.home, .key(.home)),
+            KeyCap(.text(L10n.Keyboard.end), L10n.Keyboard.end, .key(.end)),
+            KeyCap(.text(L10n.Keyboard.pgUp), L10n.Keyboard.pgUp, .key(.pageUp)),
+            KeyCap(.text(L10n.Keyboard.pgDn), L10n.Keyboard.pgDn, .key(.pageDown))
         ]
     }
 

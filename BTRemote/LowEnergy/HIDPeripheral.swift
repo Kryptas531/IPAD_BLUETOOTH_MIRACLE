@@ -17,6 +17,7 @@ final class HIDPeripheral: NSObject, ObservableObject {
     @Published private(set) var keyboardLEDs: KeyboardLEDs = []
     @Published private(set) var lastError: String?
     @Published private(set) var batteryLevel: UInt8 = 100
+    let performanceMetrics = PerformanceMetrics()
 
     private var centralObjects: [UUID: CBCentral] = [:]
 
@@ -48,6 +49,11 @@ final class HIDPeripheral: NSObject, ObservableObject {
     ]
 
     private var pendingBroadcast: (Data, CBMutableCharacteristic)?
+    private var pendingMouseDX: Int32 = 0
+    private var pendingMouseDY: Int32 = 0
+    private var pendingMouseWheel: Int32 = 0
+    private var pendingMouseButtons: MouseButtons = []
+    private var hasPendingMouse = false
 
     func start() {
         isHIDServiceAllowed = true
@@ -85,6 +91,11 @@ final class HIDPeripheral: NSObject, ObservableObject {
         isHIDServiceAdded = false
         isReadyToSendNotification = true
         pendingBroadcast = nil
+        pendingMouseDX = 0
+        pendingMouseDY = 0
+        pendingMouseWheel = 0
+        pendingMouseButtons = []
+        hasPendingMouse = false
         batteryServiceObj = nil
         deviceInfoServiceObj = nil
         hidServiceObj = nil
@@ -102,7 +113,16 @@ final class HIDPeripheral: NSObject, ObservableObject {
     }
 
     func sendMouse(_ report: MouseReport) {
-        broadcast(report.data, reportID: .mouse)
+        performanceMetrics.recordGeneratedReport()
+        cachedReports[ReportID.mouse.rawValue] = report.data
+        pendingMouseDX += Int32(report.dX)
+        pendingMouseDY += Int32(report.dY)
+        pendingMouseWheel += Int32(report.wheel)
+        pendingMouseButtons = report.buttons
+        if hasPendingMouse { performanceMetrics.recordCoalescedMouse() }
+        hasPendingMouse = true
+        performanceMetrics.setPendingMouseCount(1)
+        drainPendingMouse()
     }
 
     func sendKeyboard(_ report: KeyboardReport) {
@@ -359,6 +379,49 @@ final class HIDPeripheral: NSObject, ObservableObject {
         _ = updateValue(data, for: char)
     }
 
+    private func drainPendingMouse() {
+        guard let pManager else { return }
+        let recipients = activeRecipients()
+        guard !recipients.isEmpty else {
+            if pendingMouseDX != 0 || pendingMouseDY != 0 {
+                performanceMetrics.recordLostDelta(abs(pendingMouseDX) + abs(pendingMouseDY))
+            }
+            hasPendingMouse = false
+            pendingMouseDX = 0
+            pendingMouseDY = 0
+            pendingMouseWheel = 0
+            performanceMetrics.setPendingMouseCount(0)
+            return
+        }
+        guard isReadyToSendNotification else { return }
+        guard let char = charsByReportID[ReportID.mouse.rawValue] ?? bootMouseInputChar else { return }
+
+        while hasPendingMouse && isReadyToSendNotification {
+            let dx = mouseChunk(pendingMouseDX)
+            let dy = mouseChunk(pendingMouseDY)
+            let wheel = mouseChunk(pendingMouseWheel)
+            let data = MouseReport(buttons: pendingMouseButtons, dX: dx, dY: dy, wheel: wheel).data
+            performanceMetrics.recordAttemptedReport()
+            if pManager.updateValue(data, for: char, onSubscribedCentrals: recipients) {
+                performanceMetrics.recordAcceptedReport()
+                pendingMouseDX -= Int32(dx)
+                pendingMouseDY -= Int32(dy)
+                pendingMouseWheel -= Int32(wheel)
+                if pendingMouseDX == 0, pendingMouseDY == 0, pendingMouseWheel == 0 {
+                    hasPendingMouse = false
+                    performanceMetrics.setPendingMouseCount(0)
+                }
+            } else {
+                isReadyToSendNotification = false
+                performanceMetrics.recordBackpressure()
+            }
+        }
+    }
+
+    private func mouseChunk(_ value: Int32) -> Int8 {
+        Int8(max(-127, min(127, value)))
+    }
+
     @discardableResult
     private func updateValue(_ data: Data, for char: CBMutableCharacteristic) -> Bool {
         guard let pManager else { return false }
@@ -476,6 +539,8 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
         didSubscribeTo characteristic: CBCharacteristic
     ) {
         _trackInteraction(from: central)
+        peripheral.setDesiredConnectionLatency(.low, for: central)
+        _trace("requested low connection latency for \(central.identifier)")
         subscribedCentrals[central.identifier, default: []].insert(characteristic.uuid)
         _trace("subscribe: \(central.identifier) -> \(characteristic.uuid)")
         if let id = reportID(forCharacteristic: characteristic),
@@ -514,6 +579,7 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
         isReadyToSendNotification = true
         drainPendingBroadcast()
+        drainPendingMouse()
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {

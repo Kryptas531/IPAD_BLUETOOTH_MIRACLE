@@ -27,3 +27,6 @@ vendor/bundle/
 .DS_Store
 /*.xcodeproj
 *.ipa
+
+.qwen/
+gha-creds-*.json

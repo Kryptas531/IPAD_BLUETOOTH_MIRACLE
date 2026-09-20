@@ -1,23 +1,5 @@
 import SwiftUI
 
-private struct ConsumerButton {
-    let report: ConsumerReport
-    let icon: String
-    let label: LocalizedStringKey
-
-    init(_ key: ConsumerKey, _ icon: String, _ label: LocalizedStringKey) {
-        report = ConsumerReport(key: key)
-        self.icon = icon
-        self.label = label
-    }
-
-    init(_ report: ConsumerReport, _ icon: String, _ label: LocalizedStringKey) {
-        self.report = report
-        self.icon = icon
-        self.label = label
-    }
-}
-
 struct RemoteView: View {
     let goToSetup: () -> Void
 
@@ -26,152 +8,147 @@ struct RemoteView: View {
 
     var body: some View {
         if hid.isActive || developerMode {
-            controls
+            DeckPanel(hid: hid)
+                .padding(12)
         } else {
-            NotConnectedView(icon: "gamecontroller", goToSetup: goToSetup)
+            NotConnectedView(icon: "rectangle.grid.2x2", goToSetup: goToSetup)
+        }
+    }
+}
+
+struct DeckPanel: View {
+    let hid: HIDInput
+    @State private var page = 0
+    @State private var showFKeys = false
+
+    private struct DeckKey {
+        let label: String
+        let key: Keycode?
+        let consumer: ConsumerReport?
+        let modifiers: KeyboardModifiers
+
+        init(_ label: String, key: Keycode, modifiers: KeyboardModifiers = []) {
+            self.label = label
+            self.key = key
+            consumer = nil
+            self.modifiers = modifiers
+        }
+
+        init(_ label: String, consumer: ConsumerReport) {
+            self.label = label
+            key = nil
+            self.consumer = consumer
+            modifiers = []
+        }
+
+        init(_ label: String) {
+            self.label = label
+            key = nil
+            consumer = nil
+            modifiers = []
         }
     }
 
-    private var controls: some View {
-        GeometryReader { geo in
-            if geo.size.width > geo.size.height {
-                landscapeControls(geo.size)
-            } else {
-                portraitControls(geo.size)
+    private var fKeyRows: [[DeckKey]] {
+        [
+            [DeckKey("F1", key: .f1), DeckKey("F2", key: .f2), DeckKey("F3", key: .f3), DeckKey("F4", key: .f4)],
+            [DeckKey("F5", key: .f5), DeckKey("F6", key: .f6), DeckKey("F7", key: .f7), DeckKey("F8", key: .f8)],
+            [DeckKey("F9", key: .f9), DeckKey("F10", key: .f10), DeckKey("F11", key: .f11), DeckKey("F12", key: .f12)]
+        ]
+    }
+
+    private var keys: [[DeckKey]] {
+        if showFKeys { return fKeyRows }
+        return page == 0
+            ? [
+                [DeckKey("COPY", key: .c, modifiers: .leftCtrl), DeckKey("PASTE", key: .v, modifiers: .leftCtrl), DeckKey("CUT", key: .x, modifiers: .leftCtrl), DeckKey("UNDO", key: .z, modifiers: .leftCtrl)],
+                [DeckKey("TASK MGR", key: .escape, modifiers: [.leftCtrl, .leftShift]), DeckKey("EXPLORER", key: .e, modifiers: .leftGUI), DeckKey("SEARCH", key: .s, modifiers: .leftGUI), DeckKey("DESKTOP", key: .d, modifiers: .leftGUI)],
+                [DeckKey("TASK VIEW", key: .tab, modifiers: .leftGUI), DeckKey("DESK ←", key: .leftArrow, modifiers: [.leftGUI, .leftCtrl]), DeckKey("DESK →", key: .rightArrow, modifiers: [.leftGUI, .leftCtrl]), DeckKey("SCREENSHOT", key: .s, modifiers: [.leftGUI, .leftShift])],
+                [DeckKey("VOL-", consumer: ConsumerReport(key: .volumeDown)), DeckKey("MUTE", consumer: ConsumerReport(key: .mute)), DeckKey("VOL+", consumer: ConsumerReport(key: .volumeUp)), DeckKey("PLAY/PAUSE", consumer: ConsumerReport(key: .playPause))]
+            ]
+            : [
+                [DeckKey("ESC", key: .escape), DeckKey("TAB", key: .tab), DeckKey("ENTER", key: .return), DeckKey("BACKSPACE", key: .backspace)],
+                [DeckKey("INSERT", key: .insert), DeckKey("DELETE", key: .delete), DeckKey("HOME", key: .home), DeckKey("END", key: .end)],
+                [DeckKey("PGUP", key: .pageUp), DeckKey("UP", key: .upArrow), DeckKey("PGDN", key: .pageDown), DeckKey("PRTSC", key: .printScreen)],
+                [DeckKey("LEFT", key: .leftArrow), DeckKey("DOWN", key: .downArrow), DeckKey("RIGHT", key: .rightArrow), DeckKey("F-KEYS")]
+            ]
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("DECK")
+                    .font(.headline)
+                Spacer()
+                Button(showFKeys ? "←" : (page == 0 ? "PAGE 2" : "PAGE 1")) {
+                    if showFKeys {
+                        showFKeys = false
+                    } else {
+                        page = page == 0 ? 1 : 0
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+            ForEach(Array(keys.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, item in
+                        button(item)
+                    }
+                }
+                .frame(maxHeight: .infinity)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .gesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    if showFKeys {
+                        showFKeys = false
+                        return
+                    }
+                    if value.translation.width < -40 {
+                        page = 1
+                    } else if value.translation.width > 40 {
+                        page = 0
+                    }
+                }
+        )
     }
 
-    private func portraitControls(_ size: CGSize) -> some View {
-        let h = size.height
-        return VStack(spacing: cellGap) {
-            mediaPill.frame(height: h * 0.11)
-            grid.frame(maxHeight: .infinity)
-            bottomRow.frame(height: h * 0.11)
-            dpad.frame(height: h * 0.42)
-        }
-        .frame(width: size.width, height: size.height)
-    }
-
-    private func landscapeControls(_ size: CGSize) -> some View {
-        let h = size.height
-        return HStack(spacing: cellGap * 2) {
-            VStack(spacing: cellGap) {
-                mediaPill.frame(height: h * 0.16)
-                grid.frame(maxHeight: .infinity)
-                bottomRow.frame(height: h * 0.16)
-            }
-            dpad.frame(width: min(h, size.width * 0.42))
-        }
-        .frame(width: size.width, height: size.height)
-    }
-
-    private var mediaPill: some View {
-        HStack(spacing: 0) {
-            consumerMember(.init(.rewind, "backward.fill", L10n.Media.rewind))
-            consumerMember(.init(.playPause, "playpause.fill", L10n.Media.playPause))
-            consumerMember(.init(.fastForward, "forward.fill", L10n.Media.fastForward))
-        }
-        .background(RoundedRectangle(cornerRadius: 26).fill(groupFill))
-    }
-
-    private var grid: some View {
-        HStack(spacing: cellGap) {
-            sideColumn(
-                pill: { verticalPill(
-                    .init(.volumeUp, "speaker.wave.3.fill", L10n.Media.volumeUp),
-                    .init(.volumeDown, "speaker.wave.1.fill", L10n.Media.volumeDown)
-                ) },
-                tail: { consumerCircle(.init(.mute, "speaker.slash.fill", L10n.Media.mute)) }
+    @ViewBuilder
+    private func button(_ item: DeckKey) -> some View {
+        if item.key == nil, item.consumer == nil {
+            HoldButton(
+                onPress: {
+                    Haptics.tap()
+                    showFKeys = true
+                },
+                onRelease: {},
+                background: { RoundedRectangle(cornerRadius: 8).fill(groupFill) },
+                label: { Text(item.label).font(.caption.weight(.medium)) }
             )
-            numberColumn([(1, .digit1), (4, .digit4), (7, .digit7)])
-            numberColumn([(2, .digit2), (5, .digit5), (8, .digit8)])
-            numberColumn([(3, .digit3), (6, .digit6), (9, .digit9)])
-            sideColumn(
-                pill: { verticalPill(
-                    .init(.channelUp, "plus", L10n.Remote.channelUp),
-                    .init(.channelDown, "minus", L10n.Remote.channelDown)
-                ) },
-                tail: { consumerCircle(.init(.closedCaption, "captions.bubble", L10n.Remote.closedCaptions)) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            HoldButton(
+                onPress: {
+                    if let key = item.key {
+                        hid.sendKeyboard(KeyboardReport(modifiers: item.modifiers, keys: [key]))
+                    } else if let consumer = item.consumer {
+                        hid.sendConsumer(consumer)
+                    }
+                },
+                onRelease: {
+                    if item.key != nil {
+                        hid.sendKeyboard(.zero)
+                    } else {
+                        hid.sendConsumer(.zero)
+                    }
+                },
+                background: { RoundedRectangle(cornerRadius: 8).fill(groupFill) },
+                label: { Text(item.label).font(.caption.weight(.medium)) }
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    private func numberColumn(_ keys: [(Int, Keycode)]) -> some View {
-        VStack(spacing: cellGap) {
-            ForEach(keys, id: \.0) { number, key in
-                numberCircle(number, key)
-            }
-        }
-    }
-
-    private func sideColumn(
-        @ViewBuilder pill: @escaping () -> some View,
-        @ViewBuilder tail: @escaping () -> some View
-    ) -> some View {
-        GeometryReader { g in
-            VStack(spacing: cellGap) {
-                pill().frame(height: (g.size.height - cellGap) * 2 / 3)
-                tail().frame(height: (g.size.height - cellGap) / 3)
-            }
-            .frame(width: g.size.width, height: g.size.height)
-        }
-    }
-
-    private func verticalPill(_ top: ConsumerButton, _ bottom: ConsumerButton) -> some View {
-        VStack(spacing: 0) {
-            consumerMember(top)
-            consumerMember(bottom)
-        }
-        .background(Capsule().fill(groupFill))
-    }
-
-    private var bottomRow: some View {
-        HStack(spacing: cellGap) {
-            consumerCircle(.init(.acBack, "arrow.left", L10n.Remote.back))
-            consumerCircle(.init(.acHome, "house.fill", L10n.Remote.home))
-            numberCircle(0, .digit0)
-            consumerCircle(.init(.menu, "list.bullet", L10n.Remote.menu))
-            consumerCircle(.init(.power, "power", L10n.Remote.power))
-        }
-    }
-
-    private var dpad: some View {
-        DPadView(
-            onPress: { hid.sendConsumer($0) },
-            onRelease: { hid.sendConsumer(.zero) }
-        )
-    }
-
-    private func consumerCircle(_ button: ConsumerButton) -> some View {
-        HoldButton(
-            onPress: { hid.sendConsumer(button.report) },
-            onRelease: { hid.sendConsumer(.zero) },
-            background: { Circle().fill(groupFill) },
-            label: { Image(systemName: button.icon).font(.title3) }
-        )
-        .accessibilityLabel(button.label)
-    }
-
-    private func consumerMember(_ button: ConsumerButton) -> some View {
-        HoldButton(
-            onPress: { hid.sendConsumer(button.report) },
-            onRelease: { hid.sendConsumer(.zero) },
-            background: { Color.clear },
-            label: { Image(systemName: button.icon).font(.title3) }
-        )
-        .accessibilityLabel(button.label)
-    }
-
-    private func numberCircle(_ number: Int, _ key: Keycode) -> some View {
-        HoldButton(
-            onPress: { hid.sendKeyboard(KeyboardReport(keys: [key])) },
-            onRelease: { hid.sendKeyboard(.zero) },
-            background: { Circle().fill(groupFill) },
-            label: { Text(verbatim: "\(number)").font(.title3.weight(.medium)) }
-        )
     }
 }
 

@@ -11,9 +11,9 @@ Windows PC (iPad — BLE HID peripheral; Windows — HID host; Windows-серв�
 |---|---|---|---|
 | 1 | BLE pairing с Windows | `BTRemoteApp.swift`: `onAppear { central.start(); if autoAdvertise { lowEnergy.start() } }` — iPad advertise'ит HID; Windows подключается как обычный BT-хост | есть (не компилировался) |
 | 2 | Relative mouse move | `HIDInput.move(dx:dy:)` → `MouseReport(dX:dY:)`; жест: `TouchpadView` 1-finger pan | есть |
-| 3 | Left click | `HIDInput.click(.left)`; tap в `TouchpadView`; `TrackpadPanel.mouseButton(.left)` | есть |
+| 3 | Left click | `HIDInput.click(.left)`; tap в `TouchpadView` | есть |
 | 4 | Right click | `HIDInput.click(.right)`; two-finger tap; кнопка `.right` | есть |
-| 5 | Vertical scroll | `HIDInput.scroll(wheel)`; 2-finger pan в `TouchpadView`; scroll up/down кнопки в `TrackpadPanel` | есть |
+| 5 | Vertical scroll | `HIDInput.scroll(wheel)`; 2-finger pan в `TouchpadView` | есть |
 | 6 | Keyboard input | `KeyboardView` TextField + `KeyTypist`/`HIDInput.type(char)` + ASCII→keycode map (`mapASCII`, `_symbolKeys`) | есть |
 | 7 | ESC | `KeyCap(.symbol("escape"), L10n.Keyboard.esc, .key(.escape))` в `KeyboardView.row1` | есть |
 | 8 | ENTER | `KeyCap(.symbol("return"), ..., .key(.return))` row1 | есть |

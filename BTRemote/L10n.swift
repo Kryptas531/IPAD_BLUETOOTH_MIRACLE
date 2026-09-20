@@ -350,6 +350,30 @@ extension L10n {
             "keyboard.backspace"
         }
 
+        static var insert: LocalizedStringKey {
+            "keyboard.insert"
+        }
+
+        static var delete: LocalizedStringKey {
+            "keyboard.delete"
+        }
+
+        static var home: LocalizedStringKey {
+            "keyboard.home"
+        }
+
+        static var end: LocalizedStringKey {
+            "keyboard.end"
+        }
+
+        static var pgUp: LocalizedStringKey {
+            "keyboard.pg_up"
+        }
+
+        static var pgDn: LocalizedStringKey {
+            "keyboard.pg_dn"
+        }
+
         static var enter: LocalizedStringKey {
             "keyboard.enter"
         }

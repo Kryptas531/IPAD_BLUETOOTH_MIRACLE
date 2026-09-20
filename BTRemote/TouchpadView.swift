@@ -9,6 +9,8 @@
     struct TouchpadView: UIViewRepresentable {
         var moveSensitivity: CGFloat
         var scrollSensitivity: CGFloat
+        var mode: PadMode = .trackpad
+        var metrics: PerformanceMetrics?
         var onMove: (Int8, Int8) -> Void
         var onScroll: (Int8) -> Void
         var onLeftClick: () -> Void
@@ -22,6 +24,14 @@
         }
 
         func makeUIView(context: Context) -> UIView {
+            if mode == .game {
+                return HighFidelityTouchView(
+                    metrics: metrics,
+                    onMove: onMove,
+                    onTap: onLeftClick,
+                    moveSensitivity: moveSensitivity
+                )
+            }
             let view = UIView()
             view.backgroundColor = .clear
             view.isMultipleTouchEnabled = true
@@ -57,6 +67,13 @@
         }
 
         func updateUIView(_ uiView: UIView, context: Context) {
+            if let gameView = uiView as? HighFidelityTouchView {
+                gameView.metrics = metrics
+                gameView.onMove = onMove
+                gameView.onTap = onLeftClick
+                gameView.moveSensitivity = moveSensitivity
+                return
+            }
             let c = context.coordinator
             c.moveSensitivity = moveSensitivity
             c.scrollSensitivity = scrollSensitivity
@@ -154,6 +171,108 @@
                 shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
             ) -> Bool {
                 true
+            }
+        }
+    }
+
+    @MainActor
+    final class HighFidelityTouchView: UIView {
+        var metrics: PerformanceMetrics?
+        var onMove: (Int8, Int8) -> Void
+        var onTap: () -> Void
+        var moveSensitivity: CGFloat = 1
+
+        private var previousLocations: [ObjectIdentifier: CGPoint] = [:]
+        private var beganLocations: [ObjectIdentifier: CGPoint] = [:]
+        private var movedTouches: Set<ObjectIdentifier> = []
+
+        init(
+            metrics: PerformanceMetrics?,
+            onMove: @escaping (Int8, Int8) -> Void,
+            onTap: @escaping () -> Void,
+            moveSensitivity: CGFloat = 1
+        ) {
+            self.metrics = metrics
+            self.onMove = onMove
+            self.onTap = onTap
+            self.moveSensitivity = moveSensitivity
+            super.init(frame: .zero)
+            isMultipleTouchEnabled = true
+            backgroundColor = .clear
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            metrics?.recordTouchEvent()
+            for touch in touches {
+                let id = ObjectIdentifier(touch)
+                let location = touch.location(in: self)
+                previousLocations[id] = location
+                beganLocations[id] = location
+            }
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            metrics?.recordTouchEvent()
+            for touch in touches {
+                let id = ObjectIdentifier(touch)
+                let samples = event?.coalescedTouches(for: touch) ?? [touch]
+                for sample in samples {
+                    let location = sample.location(in: self)
+                    guard let previous = previousLocations[id] else {
+                        previousLocations[id] = location
+                        continue
+                    }
+                    metrics?.recordRawSample(at: sample.timestamp)
+                    let delta = CGPoint(x: location.x - previous.x, y: location.y - previous.y)
+                    send(delta: delta)
+                    previousLocations[id] = location
+                    if delta != .zero { movedTouches.insert(id) }
+                }
+            }
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+            finish(touches)
+        }
+
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+            finish(touches)
+        }
+
+        private func finish(_ touches: Set<UITouch>) {
+            metrics?.recordTouchEvent()
+            if touches.count == 1, let touch = touches.first {
+                let id = ObjectIdentifier(touch)
+                if !movedTouches.contains(id), let start = beganLocations[id],
+                   hypot(touch.location(in: self).x - start.x, touch.location(in: self).y - start.y) < 12
+                {
+                    onTap()
+                }
+            }
+            for touch in touches {
+                let id = ObjectIdentifier(touch)
+                previousLocations.removeValue(forKey: id)
+                beganLocations.removeValue(forKey: id)
+                movedTouches.remove(id)
+            }
+        }
+
+        private func send(delta: CGPoint) {
+            var x = delta.x * moveSensitivity
+            var y = delta.y * moveSensitivity
+            while abs(x) > 127 || abs(y) > 127 {
+                let dx = x > 0 ? min(127, x) : max(-127, x)
+                let dy = y > 0 ? min(127, y) : max(-127, y)
+                onMove(HIDInput.clamp(dx), HIDInput.clamp(dy))
+                x -= dx
+                y -= dy
+            }
+            if x != 0 || y != 0 {
+                onMove(HIDInput.clamp(x), HIDInput.clamp(y))
             }
         }
     }

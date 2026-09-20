@@ -12,11 +12,14 @@
 - `BTRemote/KeyboardView.swift` — target screen: TextField + клавиши
   (F1–F12, ESC, TAB, arrows, BACKSPACE, ENTER, SHIFT, META/CMD(=WIN GUI),
   CTRL, ALT, SPACE) + `TrackpadPanel`.
-- `BTRemote/TouchpadView.swift` — только iOS; жесты: 1-finger pan = move,
-  1-finger tap = left click, 2-finger tap = right click, 2-finger pan = scroll
-  (via `HIDInput.move/scroll/click` + `HIDInput.clamp`).
-- `BTRemote/TrackpadPanel.swift` — поверхность + mouse L/M/R кнопки + scroll
-  up/down (вызывает `hid.move/scroll/click`).
+- `BTRemote/TouchpadView.swift` — только iOS; TRACKPAD остаётся gesture-based,
+  а GAME использует `touchesBegan`, `touchesMoved`, `touchesEnded` и
+  `UIEvent.coalescedTouches(for:)` без predicted touches.
+- `BTRemote/TrackpadPanel.swift` — доминирующая surface без постоянной
+  scroll-column/L-M-R row; gestures заменяют эти controls. В developer mode
+  GAME показывает rolling runtime metrics overlay.
+- `BTRemote/PerformanceMetrics.swift` — rolling one-second input/BLE counters,
+  sample interval/jitter и pending/coalesced/lost-delta counters.
 - `BTRemote/HIDInput.swift` — UI→HID router: `tap(key:modifiers:)`, `type(char)`,
   `click(.left/.right)`, `move(dx:dy:)`, `scroll(wheel)`,
   `keyReports(for: .tab, modifiers: .leftAlt)` (ALT+TAB без правки стека);
@@ -35,7 +38,8 @@
   устройств + статус (BT state, advertising, HID service, подписки).
 - `BTRemote/DirectInputController.swift` (macOS-only, Accessibility capture) —
   Phase 2, не трогать. `BTRemote/Controls.swift` — `HoldButton`/`PressGesture`.
-  `BTRemote/DPadView.swift` — TV remote controls (не MVP).
+  `BTRemote/DPadView.swift` — legacy TV control, больше не используется DECK.
+  `BTRemote/RemoteView.swift` — Windows-first DECK grid с двумя страницами.
   `BTRemote/AppSettings.swift`, `BluetoothNumbers.swift`,
   `AccessibilityPermission.swift` — настройки/константы/доступность.
   `BTRemote/L10n.swift` + `Localizable.xcstrings` + `InfoPlist.xcstrings` —
