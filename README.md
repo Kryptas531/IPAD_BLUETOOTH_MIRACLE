@@ -28,8 +28,11 @@ Windows → git push → GitHub Actions (macOS runner: xcodegen + xcodebuild, `C
   advertising on launch; visible Bluetooth connection state
 - Mouse: relative move, tap = left click, two-finger tap = right click, two-finger move = scroll,
   drag (1-finger pan)
-- Keyboard: typing via the input field; keycaps Ctrl / Win / Alt / Shift (full press+release since
-  the Win-key fix `0bccedc`); extended keys + temporary F1–F12 grid
+- Keyboard: typing via the input field; keycaps Ctrl / Win / Alt / Shift behave as momentary
+  hold-to-combo modifiers (short tap = full press+release, so a short Win tap opens Start);
+  dedicated combined keycaps ALT+TAB / WIN+L in the temporary keyboard overlay (built in
+  `dbe36ab`, CI green — physical verification pending); extended keys +
+  temporary F1–F12 grid
 - Direct Input: a physical Windows keyboard/mouse connected to the iPad passes through to Windows;
   release chord Ctrl+Alt+Backspace (configurable) — implemented in code; not yet physically tested
 - GAME mode: coalesced raw touch sampling (`UIEvent.coalescedTouches(for:)`, no predicted
@@ -38,11 +41,10 @@ Windows → git push → GitHub Actions (macOS runner: xcodegen + xcodebuild, `C
 - Verified on hardware (basic path only): pairing, mouse move/tap/scroll, typing
 
 ## Current limitations (brief)
-- The Win-key fix (`0bccedc`) is built and CI-green, but the full physical acceptance (Win tap →
-  Start; Win+L → login → Alt+Tab → typing; GAME metrics) is **not yet re-verified**
-- After that fix, multi-key combinations via on-screen modifier keycaps (e.g. Ctrl+letter) are no
-  longer sendable — dedicated combined keycaps / restored sticky behavior are the next planned
-  fix (see `SPEC.md` §10)
+- The Win-key fix (`0bccedc`) + modifier hold / combined-keycap fix (`dbe36ab`) are built
+  and CI-green (run `35652625241`), but physical acceptance (Win tap → Start; hold Alt +
+  press Tab; ALT+TAB / WIN+L keycaps; lock-screen flow; GAME metrics) is **not yet
+  verified** — needs the user's iPad + Windows session (see `SPEC.md` §9/§10)
 - TOUCH mode (absolute digitizer), gyro aim and native dictation: not implemented
 - Compilation of any newer Swift edits is unverified without a new CI run (no Xcode on the dev
   machine); some imported upstream features (iPhone remote, macOS Bluetooth Classic backend, TV

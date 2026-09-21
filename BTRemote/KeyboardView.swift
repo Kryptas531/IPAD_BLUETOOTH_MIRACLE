@@ -26,6 +26,7 @@ struct KeyboardView: View {
     @State private var gameChromeVisible = true
     @State private var showKeyboard = false
     @State private var mods: KeyboardModifiers = []
+    @State private var held: KeyboardModifiers = []
     @FocusState private var focused: Bool
     @StateObject private var typist = KeyTypist()
 
@@ -252,6 +253,7 @@ struct KeyboardView: View {
             keyRow(row2)
             keyRow(row3)
             keyRow(row4)
+            keyRow(row5)
         }
     }
 
@@ -270,27 +272,56 @@ struct KeyboardView: View {
         .frame(height: keyHeight)
     }
 
+    @ViewBuilder
     private func keyCapButton(_ key: KeyCap) -> some View {
         let armed: Bool = {
             if case let .modifier(mod) = key.action { return mods.contains(mod) }
             return false
         }()
-        return Button {
-            Haptics.tap()
-            switch key.action {
-            case let .key(code): press(code)
-            case let .modifier(mod):
-                typist.send = hid.sendKeyboard
-                typist.enqueue([KeyboardReport(modifiers: mod, keys: []), .zero])
+        switch key.action {
+        case let .key(code):
+            Button {
+                Haptics.tap()
+                press(code)
+            } label: {
+                keyLabel(key.label)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(armed ? Color.accentColor : groupFill))
+                    .foregroundColor(armed ? .white : .primary)
             }
-        } label: {
-            keyLabel(key.label)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 6).fill(armed ? Color.accentColor : groupFill))
-                .foregroundColor(armed ? .white : .primary)
+            .buttonStyle(.plain)
+            .accessibilityLabel(key.accessibility)
+        case let .modifier(mod):
+            HoldButton(
+                onPress: {
+                    Haptics.tap()
+                    held.insert(mod)
+                    typist.send = hid.sendKeyboard
+                    typist.enqueue([KeyboardReport(modifiers: held, keys: [])])
+                },
+                onRelease: {
+                    held.subtract(mod)
+                    typist.send = hid.sendKeyboard
+                    typist.enqueue([KeyboardReport(modifiers: held, keys: [])])
+                },
+                background: { RoundedRectangle(cornerRadius: 6).fill(armed ? Color.accentColor : groupFill) },
+                label: { keyLabel(key.label).foregroundColor(armed ? Color.white : Color.primary) }
+            )
+            .accessibilityLabel(key.accessibility)
+        case let .combo(code, mod):
+            Button {
+                Haptics.tap()
+                typist.send = hid.sendKeyboard
+                typist.enqueue(HIDInput.keyReports(for: code, modifiers: mod))
+            } label: {
+                keyLabel(key.label)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                    .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(key.accessibility)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(key.accessibility)
     }
 
     @ViewBuilder
@@ -358,9 +389,27 @@ struct KeyboardView: View {
         ]
     }
 
+    // Dedicated combined shortcuts for the §9 acceptance flow: letters have no keycaps, so
+    // hold-Win + L cannot be assembled from ordinary keycaps; a dedicated keycap sends the
+    // exact combined down+release regardless of sticky/held modifiers.
+    private var row5: [KeyCap] {
+        [
+            KeyCap(.text(LocalizedStringKey("ALT+TAB")), LocalizedStringKey("ALT+TAB"), .combo(.tab, .leftAlt)),
+            KeyCap(.text(LocalizedStringKey("WIN+L")), LocalizedStringKey("WIN+L"), .combo(.l, .leftGUI))
+        ]
+    }
+
+    private var effectiveMods: KeyboardModifiers { mods.union(held) }
+
+    // Key DOWN carries the effective modifiers (sticky ∪ held); key UP releases only
+    // the key — physically held modifiers stay down until that finger lifts, so a
+    // held ALT survives pressing/releasing other keycaps (physical keyboard semantics).
     private func press(_ key: Keycode) {
         typist.send = hid.sendKeyboard
-        typist.enqueue(HIDInput.keyReports(for: key, modifiers: mods))
+        typist.enqueue([
+            KeyboardReport(modifiers: effectiveMods, keys: [key]),
+            KeyboardReport(modifiers: held, keys: []),
+        ])
     }
 
     private func toggle(_ mod: KeyboardModifiers) {
@@ -383,7 +432,7 @@ struct KeyboardView: View {
             reports += HIDInput.keyReports(for: .backspace)
         }
         for character in new.dropFirst(prefix) {
-            reports += HIDInput.keyReports(for: character, adding: mods)
+            reports += HIDInput.keyReports(for: character, adding: effectiveMods)
         }
         typist.enqueue(reports)
         sent = new
@@ -394,7 +443,7 @@ struct KeyboardView: View {
         typist.send = hid.sendKeyboard
         var reports: [KeyboardReport] = []
         for character in text {
-            reports += HIDInput.keyReports(for: character, adding: mods)
+            reports += HIDInput.keyReports(for: character, adding: effectiveMods)
         }
         typist.enqueue(reports)
         clear()
@@ -417,6 +466,7 @@ private struct KeyCap {
     enum Action {
         case key(Keycode)
         case modifier(KeyboardModifiers)
+        case combo(Keycode, KeyboardModifiers)
     }
 
     let label: Label

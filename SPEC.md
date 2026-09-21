@@ -80,11 +80,41 @@ locally — Windows without Xcode/swift — so build verification = CI only, see
 - **Keyboard:** typing through the input field (`KeyTypist`/`HIDInput.type(char)` + ASCII→keycode
   map, ~20 ms pacing). IMPLEMENTED (CI VERIFIED). Letters are not keycaps — typing goes through
   the input field or the physical keyboard.
-- **Keycaps Ctrl / Win / Alt / Shift** (Windows semantics, not Command/Option): each tap sends a
-  full press+release (`KeyboardReport(modifiers: mod, keys: [])` + `.zero` via the typist) since
-  `0bccedc` — a single Win key press reaches the host. IMPLEMENTED (see §10 for the side effect).
+- **Keycaps Ctrl / Win / Alt / Shift** (Windows semantics, not Command/Option): since `0bccedc`
+  each tap sends a full press+release (`KeyboardReport(modifiers: mod, keys: [])` + `.zero` via
+  the typist) — a single Win key press reaches the host, but sequential/combined key presses
+  through the onscreen modifier keycaps are no longer sendable (see §10). CONTRACT DEFINED
+  (this spec commit); implemented with the follow-up fix below. The main onscreen modifier
+  keycaps (Ctrl / Win / Alt / Shift) must behave like physical momentary modifier keys —
+  A. touch/press DOWN activates the corresponding modifier; release deactivates it; while a
+     modifier is held, pressing another onscreen keycap sends the combined HID report; several
+     modifier keycaps can be held simultaneously; releasing one modifier must not release the
+     other active modifiers; a short tap of a modifier naturally creates down + up, so a short
+     Win tap must still open Start on Windows.
+  B. No artificial delay may be added to distinguish a modifier tap from a combination.
+  C. The existing sticky modifier mechanism (accessory bar / text-entry flow) must not break;
+     two state sets (sticky vs physically held) are allowed to separate them — releasing a held
+     modifier must not clear a sticky one; effective modifiers = union(sticky, held), used for
+     normal key presses.
+  D. Explicit combined shortcuts needed for acceptance: WIN+L and ALT+TAB. Reason WIN+L: there
+     are no letter keycaps, so hold-Win + L cannot be assembled with ordinary keycaps. A
+     dedicated shortcut must generate the full combined key down + release, sending exactly that
+     combination, without accidentally mixing in sticky modifiers.
+  E. Physical Direct Input is not changed.
+  F. The protected BLE/HID implementation boundary is not changed without a proven need —
+     `HIDInput.swift` / `HIDReports.swift` / `LowEnergy/*` are expected to stay untouched.
+  G. CI is not physical verification; after CI, hardware behavior stays NOT VERIFIED until the
+     user's physical iPad + Windows test.
+  Implemented in `dbe36ab` [spec `d1b68d9`] — build GREEN (CI run `35652625241`, job
+  build-unsigned); hardware behavior stays NOT VERIFIED until the user's physical iPad +
+  Windows test. History: first built in `ac87c61` (CI run `35642707603`) — superseded,
+  because there an ordinary keypress released a physically held modifier.
 - **Extended keys + keyboard overlay:** Insert/Delete/Home/End/PgUp/PgDn/arrows + temporary
-  F1–F12 grid (`BTRemote/KeyboardView.swift`). IMPLEMENTED (CI VERIFIED).
+  F1–F12 grid (`BTRemote/KeyboardView.swift`). Dedicated combined keycaps ALT+TAB and WIN+L are
+  part of the contract above (they send exactly that combination via `keyReports`); they live in
+  the temporary keyboard/extended overlay so the canonical DECK 4×4 stays unchanged;
+  implemented in `dbe36ab` (CI run `35652625241` GREEN; physical verification pending).
+  The original extended keys are IMPLEMENTED (CI VERIFIED).
 - **DECK:** Windows control surface — shortcuts + navigation + F-keys; page 1 (COPY/PASTE/CUT/
   UNDO, TASK MGR, EXPLORER/SEARCH, TASK VIEW = Win+Tab, DESK ←/→ = Win+Ctrl+arrows, SCREENSHOT =
   Win+Shift+S, vol/mute/play-pause), page 2 (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/
@@ -164,8 +194,9 @@ Per the reconciled roadmap (2026-09-20/21):
 Windows keyboard semantics → 5. DECK → 6. Gyro aim → 7. Native dictation RU/EN → 8. Feedback →
 9. experimental TOUCH / absolute digitizer.
 
-Next active fix: **modifier / sticky behavior after `0bccedc`** (§10) — if it changes expected
-behavior, a `spec(...)` commit must precede it (rule at the top of this file).
+Implemented: **modifier hold + combined keycaps after `0bccedc`** — contract defined in §5
+(A–G, spec `d1b68d9`); implemented in `dbe36ab`, CI GREEN (run `35652625241`).
+Remaining: the user's physical verification per §9.
 
 ## 9. Acceptance criteria
 (Procedure migrated from `docs/PHYSICAL_TEST.md`. Only the user, on the physical iPad + Windows,
@@ -183,20 +214,24 @@ can pass it.)
   samples Hz, mouse generated Hz, BLE accepted Hz, backpressure, pending, coalesced, lost delta,
   avg/max interval. CI cannot infer these.
 - 6. Keyboard: typing via input field reaches Windows; ESC/ENTER keycaps work.
-- 7. Shortcuts: Win tap → Start opens (post-`0bccedc` check — user re-verification PENDING).
-  Note: sequential "arm a modifier then press a key" combos are no longer sendable after
-  `0bccedc` — test only dedicated DECK single-report keys (e.g. TASK VIEW) or use a physical
-  keyboard via Direct Input.
-- 8. Lock-screen acceptance (main proof): from Windows, Win+L → lock; using ONLY the iPad: wake
-  screen, move cursor, click, type PIN/password, log in; after login: Win (Start) → Alt+Tab →
-  typing → scroll → left/right click. (Alt+Tab via on-screen keycaps is currently blocked by the
-  §10 regression — until fixed, verify Alt+Tab via a physical keyboard or a dedicated keycap
-  after the §10 fix lands.)
+- 7. Shortcuts: Win tap → Start opens. Momentary modifier keycaps must support hold-and-press
+  combos: hold Alt (or Ctrl / Shift / Win) → press another keycap → the combined report is sent.
+  Dedicated ALT+TAB and WIN+L keycaps in the temporary keyboard/extended overlay must send
+  exactly that combination. Single-report DECK keys (e.g. TASK VIEW) keep working. These await
+  the user's physical test.
+- 8. Lock-screen acceptance (main proof): from Windows, WIN+L (dedicated combined keycap) →
+  lock; using ONLY the iPad: wake screen, move cursor, click, type PIN/password, log in; after
+  login: Win (Start, short tap) → Alt+Tab (dedicated ALT+TAB keycap, or hold Alt + press Tab) →
+  typing → scroll → left/right click. (Implemented in `dbe36ab`; not yet tested
+  on hardware — until then, Alt+Tab can be verified via a physical keyboard through
+  Direct Input.)
 - Ready = all mandatory items (former MVP table 1–14) work AND lock-screen acceptance passes.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
-- **Modifier behavior after `0bccedc` (ACTIVE NEXT FIX).** Verified against code + git: `0bccedc`
+- **Modifier behavior after `0bccedc` (fixed — contract defined in §5, implemented in
+  `dbe36ab`, CI-built; physical verification pending).** Verified against code + git:
+  `0bccedc`
   ("fix: modifier keycaps send full press+release…") made modifier keycaps (Ctrl/Win/Alt/Shift)
   send full press+release (`KeyboardReport(modifiers: mod, keys: [])` + `.zero`,
   `KeyboardView.swift` ~line 279-287). This fixed the standalone Win key (before: modifier taps
@@ -208,15 +243,19 @@ can pass it.)
   Dedicated single-report DECK keys work (TASK VIEW etc.); Direct Input physical-keyboard path is
   unaffected (physical combos pass through; `DirectInputController.swift:286` builds the modifier
   bitmask). The HID stack can already send combined reports (`HIDInput.keyReports(for:modifiers:)`,
-  `KeyboardReport(modifiers:keys:)`). Needed next: dedicated combined keycaps (e.g. ALT+TAB,
-  Win+L) and/or restored press-and-hold modifiers — spec commit first, then implementation.
+  `KeyboardReport(modifiers:keys:)`). The needed dedicated combined keycaps (ALT+TAB, WIN+L) and
+  restored press-and-hold modifiers are defined in §5 (contract A–G) and §9; implemented in
+  `dbe36ab` [spec `d1b68d9`] — CI GREEN (run `35652625241`); first built in `ac87c61`
+  (CI `35642707603`, superseded by the held-modifier correction in `dbe36ab`).
 - **TOUCH mode:** EXPERIMENTAL / incomplete — absolute digitizer HID report/descriptor work not
   done; known risk to GATT descriptors/pairing (protected stack); research before implementing;
   feature flag; separate branch; owner/LEAD decision.
 - **Gyro aim:** not implemented (game overlay placeholders: Touch/Gyro/Hybrid, recenter — "later").
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
-- **Build:** no Xcode/swift on the Windows machine — "build passes" is verified only up to code
-  HEAD `0bccedc` (CI run `35511332912`); any newer Swift edit is unverified without a new CI run.
+- **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
+  HEAD `dbe36ab` (CI run `35652625241`; earlier code HEADs: `ac87c61` / run `35642707603`,
+  `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`); any newer Swift edit is
+  unverified without a new CI run.
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
 - Imported upstream features out of scope here: iPhone remote surface, macOS Bluetooth Classic
@@ -266,4 +305,5 @@ only the one `reviewer.md` profile unless a future task truly needs more.
 - Dynamic per-app panels; OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
   BLE-stack implications to be researched), gyro aim, native dictation, modifier combined
-  keycaps / sticky restore (next active fix, §10).
+  keycaps / sticky restore (specified in §5/§9; implemented in `ac87c61` + `dbe36ab` —
+  physical verification pending).
