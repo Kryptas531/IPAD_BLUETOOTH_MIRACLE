@@ -13,6 +13,7 @@ then code.
 - Exception: `.qwen/agents/reviewer.md` pins `model: openai-responses:Qwen/Qwen3.8-Flash-Next`
   (independent, read-only, final-review role); it must never inherit the default no-thinking
   worker route.
+- Do not add task-specific acceptance rules to the persistent reviewer profile.
 
 ## Environment
 - Windows machine (PowerShell/cmd available); Qwen Code `run_shell_command` executes through
