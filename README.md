@@ -31,7 +31,8 @@ Windows → git push → GitHub Actions (macOS runner: xcodegen + xcodebuild, `C
 - Keyboard: typing via the input field; keycaps Ctrl / Win / Alt / Shift behave as momentary
   hold-to-combo modifiers (short tap = full press+release, so a short Win tap opens Start);
   dedicated combined keycaps ALT+TAB / WIN+L in the temporary keyboard overlay (built in
-  `ac87c61`, CI green — physical verification pending); extended keys + temporary F1–F12 grid
+  `ac87c61` + `dbe36ab`, CI green — physical verification pending); extended keys +
+  temporary F1–F12 grid
 - Direct Input: a physical Windows keyboard/mouse connected to the iPad passes through to Windows;
   release chord Ctrl+Alt+Backspace (configurable) — implemented in code; not yet physically tested
 - GAME mode: coalesced raw touch sampling (`UIEvent.coalescedTouches(for:)`, no predicted
@@ -40,10 +41,11 @@ Windows → git push → GitHub Actions (macOS runner: xcodegen + xcodebuild, `C
 - Verified on hardware (basic path only): pairing, mouse move/tap/scroll, typing
 
 ## Current limitations (brief)
-- The Win-key fix (`0bccedc`) + modifier hold / combined-keycap fix (`ac87c61`) are built and
-  CI-green (run `35642707603`), but physical acceptance (Win tap → Start; hold Alt + press Tab;
-  ALT+TAB / WIN+L keycaps; lock-screen flow; GAME metrics) is **not yet verified** — needs the
-  user's iPad + Windows session (see `SPEC.md` §9/§10)
+- The Win-key fix (`0bccedc`) + modifier hold / combined-keycap fix (`ac87c61` + review
+  follow-up `dbe36ab`) are built and CI-green (runs `35642707603`, `35652625241`), but
+  physical acceptance (Win tap → Start; hold Alt + press Tab; ALT+TAB / WIN+L keycaps;
+  lock-screen flow; GAME metrics) is **not yet verified** — needs the user's iPad + Windows
+  session (see `SPEC.md` §9/§10)
 - TOUCH mode (absolute digitizer), gyro aim and native dictation: not implemented
 - Compilation of any newer Swift edits is unverified without a new CI run (no Xcode on the dev
   machine); some imported upstream features (iPhone remote, macOS Bluetooth Classic backend, TV
