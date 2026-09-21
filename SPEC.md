@@ -274,8 +274,11 @@ panels, OpenClaw, clipboard / voice / state, macros, telemetry, accounts, cloud,
 monitoring. Current product is exactly: IPAD → BLE HID → WINDOWS.
 
 **Tooling constraint:** only the current corporate Qwen model + built-in Qwen Code features; no
-Codex, no Claude, no external/paid models or APIs. Project-local agents: `model: inherit`; keep
-only the one `reviewer.md` profile unless a future task truly needs more.
+Codex, no Claude, no external/paid models or APIs. The final reviewer (`.qwen/agents/reviewer.md`)
+explicitly pins `model: openai-responses:Qwen/Qwen3.8-Flash-Next` and must never inherit the
+generic/no-thinking default worker route; other project-local agents may use `model: inherit`
+per current QWEN/task routing. Keep only the one `reviewer.md` profile unless a future task
+truly needs more.
 
 ## 12. Build and verification path
 - Local: Windows; no Xcode/swift/xcodebuild — compilation cannot be checked locally. `git`/`node`
