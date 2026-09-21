@@ -297,12 +297,12 @@ struct KeyboardView: View {
                     Haptics.tap()
                     held.insert(mod)
                     typist.send = hid.sendKeyboard
-                    typist.enqueue([KeyboardReport(modifiers: effectiveMods, keys: [])])
+                    typist.enqueue([KeyboardReport(modifiers: held, keys: [])])
                 },
                 onRelease: {
                     held.subtract(mod)
                     typist.send = hid.sendKeyboard
-                    typist.enqueue([KeyboardReport(modifiers: effectiveMods, keys: [])])
+                    typist.enqueue([KeyboardReport(modifiers: held, keys: [])])
                 },
                 background: { RoundedRectangle(cornerRadius: 6).fill(armed ? Color.accentColor : groupFill) },
                 label: { keyLabel(key.label).foregroundColor(armed ? Color.white : Color.primary) }
@@ -401,9 +401,15 @@ struct KeyboardView: View {
 
     private var effectiveMods: KeyboardModifiers { mods.union(held) }
 
+    // Key DOWN carries the effective modifiers (sticky ∪ held); key UP releases only
+    // the key — physically held modifiers stay down until that finger lifts, so a
+    // held ALT survives pressing/releasing other keycaps (physical keyboard semantics).
     private func press(_ key: Keycode) {
         typist.send = hid.sendKeyboard
-        typist.enqueue(HIDInput.keyReports(for: key, modifiers: effectiveMods))
+        typist.enqueue([
+            KeyboardReport(modifiers: effectiveMods, keys: [key]),
+            KeyboardReport(modifiers: held, keys: []),
+        ])
     }
 
     private func toggle(_ mod: KeyboardModifiers) {
