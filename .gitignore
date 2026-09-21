@@ -28,5 +28,11 @@ vendor/bundle/
 /*.xcodeproj
 *.ipa
 
-.qwen/
+.qwen/tmp/
+.qwen/settings.json
 gha-creds-*.json
+
+# local scratch / generated artifacts — never commit (SOT cleanup 2026-09-21)
+*.zip
+rawprobe/
+SideStore-0.7.0-alpha/
