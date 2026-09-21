@@ -249,10 +249,13 @@ only the one `reviewer.md` profile unless a future task truly needs more.
   `CODE_SIGNING_ALLOWED=NO`; package Payload/BTRemote.app → zip → BTRemote.ipa) → artifact
   `btr-remote-unsigned-ipa` → install on the iPad via SideStore/Sideloadly (free Apple ID
   re-signing).
-- Current verified values (re-checked live 2026-09-21): repo HEAD local == remote == `7b8679d`
-  (docs-only commit on top of code HEAD `0bccedc`); latest green CI: run `35561610311` (head
-  `7b8679d`, job build-unsigned, ✓); earlier green: `35511332912` (head `0bccedc`). Newest IPA
-  containing the Win-key fix: `.qwen/tmp/ipa-p4/BTRemote.ipa` (from the `0bccedc` build).
+- Git/build values as of 2026-09-21, BEFORE the SOT-cleanup commits (verified live via git/gh):
+  `main` local == remote == `7b8679d` (docs-only commit on top of code HEAD `0bccedc`); latest
+  green CI: run `35561610311` (head `7b8679d`, job build-unsigned, ✓); earlier green:
+  `35511332912` (head `0bccedc`). The SOT-cleanup commits (`3734cdf`/`06b8985`/`ebb5009` +
+  review refresh) are docs-only on branch `cleanup/source-of-truth` — no Swift changed, so no
+  new CI run is required. Newest IPA containing the Win-key fix: `.qwen/tmp/ipa-p4/BTRemote.ipa`
+  (from the `0bccedc` build).
 - Never commit: credentials, downloaded IPA/ZIPs, SideStore data, probes (`rawprobe/`), temp
   folders (`.qwen/tmp`), or unrelated scratch.
 - Physical verification (full §9 procedure) still awaits the user's hardware sessions.

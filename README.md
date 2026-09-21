@@ -31,7 +31,7 @@ Windows → git push → GitHub Actions (macOS runner: xcodegen + xcodebuild, `C
 - Keyboard: typing via the input field; keycaps Ctrl / Win / Alt / Shift (full press+release since
   the Win-key fix `0bccedc`); extended keys + temporary F1–F12 grid
 - Direct Input: a physical Windows keyboard/mouse connected to the iPad passes through to Windows;
-  release chord Ctrl+Alt+Backspace (configurable)
+  release chord Ctrl+Alt+Backspace (configurable) — implemented in code; not yet physically tested
 - GAME mode: coalesced raw touch sampling (`UIEvent.coalescedTouches(for:)`, no predicted
   touches); performance metrics overlay (hidden by default)
 - DECK: Windows shortcuts + navigation + F-keys (page 2)
