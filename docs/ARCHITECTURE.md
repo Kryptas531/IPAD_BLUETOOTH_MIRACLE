@@ -1,6 +1,6 @@
 # docs/ARCHITECTURE.md — карта upstream + защищённая граница
 
-## Карта (проверено чтением файлов)
+## Карта (проверено чтением файлов, HEAD `0bccedc`)
 - `BTRemote/BTRemoteApp.swift` — @main; iOS: `HIDPeripheral` + `HIDCentral` +
   `DeviceNameStore`, `ContentView`; `onAppear`: `central.start()` +
   `if autoAdvertise { lowEnergy.start() }` — iPad автоматически advertise'ит
@@ -36,8 +36,13 @@
 - `BTRemote/SetupView.swift`, `DeviceListView.swift`, `DeviceInfoView.swift`,
   `DeviceRow.swift`, `DeviceNameStore.swift` — pairing/setup UI + список
   устройств + статус (BT state, advertising, HID service, подписки).
-- `BTRemote/DirectInputController.swift` (macOS-only, Accessibility capture) —
-  Phase 2, не трогать. `BTRemote/Controls.swift` — `HoldButton`/`PressGesture`.
+- `BTRemote/DirectInputController.swift` — Direct Input для физической
+  Windows-клавиатуры через iPad: iOS-ветка (`#elseif os(iOS)`) — capture через
+  `GCKeyboard.coalesced` / `GCMouse.current` (GameController); release chord
+  `Ctrl + Alt + Backspace` (default `ReleaseChord.defaultChord`, configurable
+  через `AppSettings`); macOS-ветка — event tap + Accessibility capture.
+  IMPLEMENTED (код в main, CI VERIFIED). `BTRemote/Controls.swift` —
+  `HoldButton`/`PressGesture`.
   `BTRemote/DPadView.swift` — legacy TV control, больше не используется DECK.
   `BTRemote/RemoteView.swift` — Windows-first DECK grid с двумя страницами.
   `BTRemote/AppSettings.swift`, `BluetoothNumbers.swift`,
@@ -52,8 +57,9 @@
   descriptors / report subscription+bootstrap / encryption+bonding.
 - `BTRemote/Classic/` (весь) — IOBluetooth SDP backend (macOS).
 - `BTRemote/HIDInput.swift` — UI→HID routing, ASCII map.
-- `BTRemote/BluetoothNumbers.swift`, `BTRemote/Resources/` (json) — см. P0
-  warning ниже.
+- `BTRemote/BluetoothNumbers.swift`, `BTRemote/Resources/` (json) — json
+  нет в git, во время CI их скачивает `ci_scripts/ci_post_clone.sh` (проверено).
+  Статус сборки — см. «Build verification» ниже.
 - Причина: README upstream — «changes to this stack are highly discouraged /
   likely to break SDP negotiation, GATT layout, bonding handshake, no clear
   error logs».
@@ -62,19 +68,26 @@
 - `project.yml` — XcodeGen: target `BTRemote` supportedDestinations [iOS,
   macOS], SWIFT_VERSION 6.0 strict concurrency, iOS target 15.0,
   `GENERATE_INFOPLIST_FILE: NO` + `BTRemote/Info.plist`; ресурсы:
-  `BTRemote/Resources/company_ids.json`, `service_uuids.json` (**файлов нет в
-  git — только `Resources/.gitignore`**; потенциальный build blocker; источник
-  UNKNOWN — вероятно генерирует `ci_scripts/ci_post_clone.sh`).
+  `BTRemote/Resources/company_ids.json`, `service_uuids.json` — в git НЕ
+  коммитятся (в `Resources/` только `.gitignore`); во время CI их скачивает
+  `ci_scripts/ci_post_clone.sh` из `NordicSemiconductor/bluetooth-numbers-database`
+  (файл прочитан — подтверждено).
 - `build.sh` — `ci_scripts/ci_post_clone.sh`; swiftformat/swiftlint;
   xcodebuild macOS + `-sdk iphoneos generic/platform=iOS`
   `CODE_SIGNING_ALLOWED=NO`; package: `Payload/<app>.app` → zip →
   `BTRemote.ipa` (t.u. unsigned IPA build путь УЖЕ прописан, но требует
   macOS-runner; `.xcodeproj` генерируется, не коммитится).
 - `.github/workflows/build.yml` — существует (детали читает ci-worker).
-- Среда разработки (Windows): `swift`/`xcodebuild`/`gh` — НЕТ; `git`/`node`
-  — есть. Build-верификация возможна только через GitHub Actions macOS runner.
+- Среда разработки (Windows): `swift`/`xcodebuild` — НЕТ; `git`/`node` —
+  есть; `gh` — `C:\LIFE\gh.exe` (авторизован, рабочий вызов проверен).
+  Build-верификация возможна только через GitHub Actions macOS runner
+  (подтверждено: green CI run `35511332912`, head `0bccedc`).
 
-## P0 warning
-`project.yml` ссылается на отсутствующие ресурсы (`BTRemote/Resources/*.json`);
-локальная сборка/генерация проекта на Windows невозможна в принципе. До push +
-CI-прогона нельзя утверждать «build passes».
+## Build verification (обновлено 2026-09-20)
+P0 warning закрыт: `project.yml` ссылается на отсутствующие в git ресурсы
+`BTRemote/Resources/*.json` — их скачивает `ci_scripts/ci_post_clone.sh` во
+время CI (проверено чтением файла). Локальная сборка/генерация проекта на
+Windows невозможна в принципе (нет Xcode/swift). Статус сборки: **CI VERIFIED**
+— green CI run `35511332912` (head `0bccedc`), artifact
+`btr-remote-unsigned-ipa`. Компиляцию более новых правок нельзя утверждать
+без нового CI run.

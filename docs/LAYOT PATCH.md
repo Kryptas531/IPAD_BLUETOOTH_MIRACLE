@@ -1,3 +1,10 @@
+> **SUPERSEDED BY `docs/CANON LAYOUT.md`** (2026-09-20).
+> Постановка выполнена (commits `c6b1a74`, `b207c49`, `5e8f52e`, `0bccedc`;
+> CI VERIFIED — green run `35511332912`). Актуальный канон layout —
+> `docs/CANON LAYOUT.md`; статусы — только из «Язык статусов» в `QWEN.md`.
+> Ниже — исторический текст (не выполнять заново; следующая работа —
+> «ACTIVE ROADMAP» в `QWEN.md`).
+
 Продолжаем с ТЕКУЩЕГО HEAD.
 
 ВАЖНО:
