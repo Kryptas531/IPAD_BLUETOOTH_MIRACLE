@@ -28,6 +28,9 @@ no parallel roadmap/architecture/P2/layout docs.
 - **Reviewer:** a separate Qwen agent/session; reviews the committed PR diff only; does not edit
   the builder's work; returns exactly `REVIEW: PASS` or `REVIEW: CHANGES REQUIRED` plus concrete
   findings.
+- **Orchestrator:** may coordinate fresh builder/reviewer/fixer sessions but must not implement
+  product code itself. It may merge only when the owner explicitly invokes an autopilot flow whose
+  provider instructions define strict same-HEAD review, CI, mergeability and protected-file gates.
 - Do not maintain many specialist agent profiles — keep only `.qwen/agents/reviewer.md` unless a
   future task truly needs more.
 
@@ -37,7 +40,9 @@ no parallel roadmap/architecture/P2/layout docs.
 4. implementation in small commits → 5. verification → 6. push branch → 7. open PR →
 8. separate Qwen reviewer reviews committed PR diff → 9. reviewer posts `REVIEW: PASS` /
 `REVIEW: CHANGES REQUIRED` → 10. builder fixes findings with new commits → 11. owner or ChatGPT
-merges only when explicitly requested → 12. after merge, local `main` updates by fast-forward only.
+merges only when explicitly requested; an explicitly owner-invoked provider autopilot may perform
+that merge only under its documented strict gates → 12. after merge, local `main` updates by
+fast-forward only.
 
 Do not push feature work directly to `main`. No `reset --hard`, `git clean -fd`, force-push, or
 published-history rewrites. Do not delete or commit unknown local scratch.
