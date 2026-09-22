@@ -57,7 +57,7 @@ function Invoke-Checked {
         [Parameter(Mandatory=$true)][string]$FilePath,
         [Parameter(Mandatory=$true)][string[]]$ArgumentList
     )
-    $output = & $FilePath @ArgumentList 2>&1
+    $output = & $FilePath @ArgumentList
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         throw "Command failed ($code): $FilePath $($ArgumentList -join ' ')$([Environment]::NewLine)$($output -join [Environment]::NewLine)"
@@ -66,7 +66,7 @@ function Invoke-Checked {
 }
 
 function Assert-TrackedClean {
-    $status = (& git status --porcelain=v1 --untracked-files=no 2>&1) -join [Environment]::NewLine
+    $status = (& git status --porcelain=v1 --untracked-files=no) -join [Environment]::NewLine
     if ($LASTEXITCODE -ne 0) { throw "git status failed: $status" }
     if ($status.Trim()) {
         throw "Tracked worktree is not clean. Autopilot will not touch it:$([Environment]::NewLine)$status"
@@ -159,7 +159,7 @@ function Invoke-QwenFresh {
         [string]$LogPath
     )
     Write-Host "Starting fresh Qwen process -> $LogPath"
-    $lines = & $script:Qwen -p $Prompt --yolo --max-tool-calls 100 --max-session-turns 50 --max-wall-time 45m 2>&1 |
+    $lines = & $script:Qwen -p $Prompt --yolo --max-tool-calls 100 --max-session-turns 50 --max-wall-time 45m |
         Tee-Object -FilePath $LogPath
     $code = $LASTEXITCODE
     $text = @($lines) -join [Environment]::NewLine
@@ -263,11 +263,17 @@ function Merge-Stage {
     Invoke-Checked $script:Gh @("pr", "merge", "$PrNumber", "--repo", $RepoSlug, "--merge") | Out-Null
     Sync-Main
 
-    & git push origin --delete $Branch *> $null
-    & git branch -D $Branch *> $null
+    $oldErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & git push origin --delete $Branch *> $null
+        & git branch -D $Branch *> $null
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
+    }
 }
 
-$root = (& git rev-parse --show-toplevel 2>&1)
+$root = (& git rev-parse --show-toplevel)
 if ($LASTEXITCODE -ne 0) { throw "Run this script inside the repository." }
 $root = ($root -join "").Trim()
 Set-Location $root
