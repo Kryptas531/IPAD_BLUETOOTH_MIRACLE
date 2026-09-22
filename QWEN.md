@@ -7,8 +7,13 @@ then code.
 ## Model and tools
 - Only the current corporate Qwen model + built-in Qwen Code features.
 - Do NOT use Codex, Claude, or any external/paid models or APIs.
-- Project-local agents (`.qwen/agents/`): `model: inherit`. Keep only `reviewer.md`; do not
-  maintain many specialist profiles unless a future task truly needs one.
+- Normal project-local agents (`.qwen/agents/`) may use `model: inherit` unless the task says
+  otherwise. Keep only `reviewer.md`; do not maintain many specialist profiles unless a future
+  task truly needs one.
+- Exception: `.qwen/agents/reviewer.md` pins `model: openai-responses:Qwen/Qwen3.8-Flash-Next`
+  (independent, read-only, final-review role); it must never inherit the default no-thinking
+  worker route.
+- Do not add task-specific acceptance rules to the persistent reviewer profile.
 
 ## Environment
 - Windows machine (PowerShell/cmd available); Qwen Code `run_shell_command` executes through
