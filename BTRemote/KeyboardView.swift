@@ -12,6 +12,7 @@ enum PadMode: String {
 
 struct KeyboardView: View {
     let goToSetup: () -> Void
+    var openSettings: () -> Void = {}
 
     @Environment(\.hid) private var hid
     @AppStorage(AppSettings.developerModeKey) private var developerMode = false
@@ -137,6 +138,17 @@ struct KeyboardView: View {
                 statusDot("dot.radiowaves.left.and.right", on: hid.isConnected)
                 statusDot("keyboard", on: hid.isActive)
             }
+            #if os(iOS)
+                Button {
+                    Haptics.tap()
+                    openSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(L10n.Tab.settings)
+            #endif
         }
     }
 

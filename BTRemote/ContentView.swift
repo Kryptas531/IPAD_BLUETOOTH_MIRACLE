@@ -8,74 +8,90 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     @AppStorage(AppSettings.hasSeenWelcomeKey) private var hasSeenWelcome = false
     @State private var showWelcome = false
-    @State private var showGuide = false
+    @State private var sheet: Sheet?
     #if os(macOS)
         @State private var showAccessibilityPrompt = false
         @State private var showConnectPrompt = false
     #endif
+
+    private enum Sheet: Identifiable {
+        case setup, settings, guide
+
+        var id: Self { self }
+    }
 
     private enum Tab {
         case setup, remote, settings
     }
 
     var body: some View {
-        TabView(selection: $tab) {
-            SetupView()
-                .tabItem { Label(L10n.Tab.setup, systemImage: "gearshape") }
-                .tag(Tab.setup)
-            RemoteTabView(goToSetup: { tab = .setup })
-                .tabItem { Label(L10n.Tab.remote, systemImage: "keyboard") }
-                .tag(Tab.remote)
-            SettingsView()
-                .tabItem { Label(L10n.Tab.settings, systemImage: "slider.horizontal.3") }
-                .tag(Tab.settings)
+        Group {
+            #if os(iOS)
+                NavigationView {
+                    KeyboardView(goToSetup: { sheet = .setup }, openSettings: { sheet = .settings })
+                }
+                .navigationViewStyle(.stack)
+                .background(PointerLockHost(locked: directInput.isCapturing))
+            #else
+                TabView(selection: $tab) {
+                    SetupView()
+                        .tabItem { Label(L10n.Tab.setup, systemImage: "gearshape") }
+                        .tag(Tab.setup)
+                    RemoteTabView(goToSetup: { tab = .setup })
+                        .tabItem { Label(L10n.Tab.remote, systemImage: "keyboard") }
+                        .tag(Tab.remote)
+                    SettingsView()
+                        .tabItem { Label(L10n.Tab.settings, systemImage: "slider.horizontal.3") }
+                        .tag(Tab.settings)
+                }
+                .onChange(of: hid.isConnected) { connected in
+                    guard connected else { return }
+                    if !directInput.isCapturing { showConnectPrompt = true }
+                }
+                .frame(minWidth: 480, idealWidth: 560, minHeight: 640, idealHeight: 800)
+                .onChange(of: directInput.needsAccessibility) { needs in
+                    guard needs else { return }
+                    showAccessibilityPrompt = true
+                    directInput.clearAccessibilityRequest()
+                }
+                .alert(L10n.DirectInput.permissionTitle, isPresented: $showAccessibilityPrompt) {
+                    Button(L10n.DirectInput.openSettings) { AccessibilityPermission.request() }
+                    Button(L10n.Action.notNow, role: .cancel) {}
+                } message: {
+                    Text(L10n.DirectInput.permissionMessage)
+                }
+                .alert(L10n.DirectInput.connectedPromptTitle, isPresented: $showConnectPrompt) {
+                    Button(L10n.DirectInput.enable) { directInput.start(hid) }
+                    Button(L10n.Action.notNow, role: .cancel) { tab = .remote }
+                } message: {
+                    Text(L10n.DirectInput.connectedPromptMessage)
+                        + Text(verbatim: "\n\n")
+                        + Text(L10n.DirectInput.releaseHint)
+                }
+            #endif
         }
         .environmentObject(directInput)
-        #if os(iOS)
-            .background(PointerLockHost(locked: directInput.isCapturing))
-        #endif
-            .onChange(of: hid.isConnected) { connected in
-                guard connected else { return }
-                #if os(macOS)
-                    if !directInput.isCapturing { showConnectPrompt = true }
-                #else
-                    tab = .remote
-                #endif
+        .onAppear(perform: _onAppear)
+        .alert(L10n.Welcome.title, isPresented: $showWelcome) {
+            Button(L10n.Welcome.viewGuide) {
+                hasSeenWelcome = true
+                sheet = .guide
             }
-            .onAppear(perform: _onAppear)
-            .alert(L10n.Welcome.title, isPresented: $showWelcome) {
-                Button(L10n.Welcome.viewGuide) {
-                    hasSeenWelcome = true
-                    showGuide = true
-                }
-                .keyboardShortcut(.defaultAction)
-                Button(L10n.Setup.videoInstructions) { openURL(AppSettings.instructionsURL) }
-            } message: {
-                Text(L10n.Welcome.message)
+            .keyboardShortcut(.defaultAction)
+            Button(L10n.Setup.videoInstructions) { openURL(AppSettings.instructionsURL) }
+        } message: {
+            Text(L10n.Welcome.message)
+        }
+        .sheet(item: $sheet) { which in
+            switch which {
+            case .setup:
+                SetupView()
+            case .settings:
+                SettingsView()
+            case .guide:
+                guideSheet
             }
-            .sheet(isPresented: $showGuide) { guideSheet }
-        #if os(macOS)
-            .frame(minWidth: 480, idealWidth: 560, minHeight: 640, idealHeight: 800)
-            .onChange(of: directInput.needsAccessibility) { needs in
-                guard needs else { return }
-                showAccessibilityPrompt = true
-                directInput.clearAccessibilityRequest()
-            }
-            .alert(L10n.DirectInput.permissionTitle, isPresented: $showAccessibilityPrompt) {
-                Button(L10n.DirectInput.openSettings) { AccessibilityPermission.request() }
-                Button(L10n.Action.notNow, role: .cancel) {}
-            } message: {
-                Text(L10n.DirectInput.permissionMessage)
-            }
-            .alert(L10n.DirectInput.connectedPromptTitle, isPresented: $showConnectPrompt) {
-                Button(L10n.DirectInput.enable) { directInput.start(hid) }
-                Button(L10n.Action.notNow, role: .cancel) { tab = .remote }
-            } message: {
-                Text(L10n.DirectInput.connectedPromptMessage)
-                    + Text(verbatim: "\n\n")
-                    + Text(L10n.DirectInput.releaseHint)
-            }
-        #endif
+        }
     }
 
     private func _onAppear() {
@@ -101,7 +117,7 @@ struct ContentView: View {
         GuideView(transport: .lowEnergy)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.Action.done) { showGuide = false }
+                    Button(L10n.Action.done) { sheet = nil }
                 }
             }
     }
