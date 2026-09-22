@@ -110,7 +110,7 @@ function Get-PrData {
     param([int]$PrNumber)
     $raw = (Invoke-Checked $script:Gh @(
         "pr", "view", "$PrNumber", "--repo", $RepoSlug,
-        "--json", "number,state,mergeable,headRefOid,headRefName,baseRefName,files,url"
+        "--json", "number,state,mergeable,headRefOid,headRefName,baseRefOid,baseRefName,files,url"
     )) -join [Environment]::NewLine
     return $raw | ConvertFrom-Json
 }
@@ -245,10 +245,11 @@ AUTOPILOT CONTRACT:
 }
 
 function Merge-Stage {
-    param([int]$PrNumber, [string]$ExpectedHead, [string]$Branch)
+    param([int]$PrNumber, [string]$ExpectedHead, [string]$ExpectedBase, [string]$Branch)
     $pr = Get-PrData $PrNumber
     if ($pr.state -ne "OPEN") { throw "PR #$PrNumber is not OPEN." }
     if ($pr.headRefOid -ne $ExpectedHead) { throw "PR #$PrNumber HEAD moved before merge." }
+    if ($pr.baseRefOid -ne $ExpectedBase) { throw "PR #$PrNumber base moved before merge." }
     if ($pr.mergeable -ne "MERGEABLE") { throw "PR #$PrNumber is not mergeable: $($pr.mergeable)" }
     Assert-NoProtectedFiles $pr
     $ci = Assert-GreenCi $ExpectedHead
@@ -305,7 +306,7 @@ foreach ($stageName in $Stages) {
     $pr = Get-OpenPrForBranch $branch
     if ($null -eq $pr) {
         $builderOutput = Invoke-Builder $stageName $branch $task
-        if ($builderOutput -match "AUTOPILOT_STAGE:\s*SKIP") {
+        if ($builderOutput -match "(?m)^\s*AUTOPILOT_STAGE:\s*SKIP\s*$") {
             Write-Host "Stage '$stageName' reported already compliant. Continuing."
             Sync-Main
             continue
@@ -328,6 +329,7 @@ foreach ($stageName in $Stages) {
         Assert-NoProtectedFiles $prData
 
         $headBeforeReview = [string]$prData.headRefOid
+        $baseBeforeReview = [string]$prData.baseRefOid
         $ci = Assert-GreenCi $headBeforeReview
         Write-Host "Exact-head CI green: $($ci.databaseId) @ $headBeforeReview"
 
@@ -337,18 +339,18 @@ foreach ($stageName in $Stages) {
         Assert-TrackedClean
 
         $afterReview = Get-PrData $prNumber
-        if ($afterReview.headRefOid -ne $headBeforeReview) {
-            Write-Host "PR HEAD moved during review. Discarding stale review and re-running."
+        if ($afterReview.headRefOid -ne $headBeforeReview -or $afterReview.baseRefOid -ne $baseBeforeReview) {
+            Write-Host "PR HEAD or base moved during review. Discarding stale review and re-running."
             continue
         }
 
-        if ($reviewText -match "REVIEW:\s*PASS") {
-            Merge-Stage $prNumber $headBeforeReview $branch
+        if ($reviewText -match "(?m)^\s*REVIEW:\s*PASS\s*$") {
+            Merge-Stage $prNumber $headBeforeReview $baseBeforeReview $branch
             Write-Host "Stage '$stageName' complete."
             break
         }
 
-        if ($reviewText -match "REVIEW:\s*CHANGES REQUIRED") {
+        if ($reviewText -match "(?m)^\s*REVIEW:\s*CHANGES REQUIRED\s*$") {
             if ($fixCount -ge $MaxFixLoops) {
                 throw "Stage '$stageName' exceeded MaxFixLoops=$MaxFixLoops. See review logs."
             }
