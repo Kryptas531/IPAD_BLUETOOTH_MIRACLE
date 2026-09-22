@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject private var lowEnergy: HIDPeripheral
     @EnvironmentObject private var names: DeviceNameStore
     @Environment(\.hid) private var hid
+    @Environment(\.dismiss) private var dismiss
     @State private var showReset = false
     @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
     @AppStorage(AppSettings.scrollSensitivityKey) private var scrollSensitivity = AppSettings.defaultScrollSensitivity
@@ -23,7 +24,13 @@ struct SettingsView: View {
             }
         #else
             NavigationView {
-                form.navigationTitle(L10n.Tab.settings)
+                form
+                    .navigationTitle(L10n.Tab.settings)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(L10n.Action.done) { dismiss() }
+                        }
+                    }
             }
             .navigationViewStyle(.stack)
         #endif

@@ -15,6 +15,7 @@ struct SetupView: View {
         @State private var showBluetoothOff = false
     #endif
     @EnvironmentObject private var directInput: DirectInputController
+    @Environment(\.dismiss) private var dismiss
     #if os(macOS)
         @EnvironmentObject private var classic: HIDClassicDevice
         @AppStorage("BTRemote.macTransportMode") private var modeRaw: String = TransportMode.defaultMode.rawValue
@@ -43,7 +44,13 @@ struct SetupView: View {
             }
         #else
             NavigationView {
-                form.navigationTitle(L10n.App.title)
+                form
+                    .navigationTitle(L10n.App.title)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(L10n.Action.done) { dismiss() }
+                        }
+                    }
             }
             .navigationViewStyle(.stack)
             .onChange(of: hid.isActive) { isActive in
