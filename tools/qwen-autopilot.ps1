@@ -159,7 +159,7 @@ function Invoke-QwenFresh {
         [string]$LogPath
     )
     Write-Host "Starting fresh Qwen process -> $LogPath"
-    $lines = & $script:Qwen -p $Prompt --yolo --max-tool-calls 100 --max-session-turns 50 --max-wall-time 45m |
+    $lines = & $script:Qwen $Prompt --yolo --max-tool-calls 100 --max-session-turns 50 --max-wall-time 45m |
         Tee-Object -FilePath $LogPath
     $code = $LASTEXITCODE
     $text = @($lines) -join [Environment]::NewLine
