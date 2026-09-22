@@ -7,13 +7,17 @@ then code.
 ## Model and tools
 - Only the current corporate Qwen model + built-in Qwen Code features.
 - Do NOT use Codex, Claude, or any external/paid models or APIs.
+- Main builder/dev sessions use the corporate Qwen thinking route at MEDIUM effort with the
+  project builder anti-churn profile.
 - Normal project-local agents (`.qwen/agents/`) may use `model: inherit` unless the task says
   otherwise. Keep only `reviewer.md`; do not maintain many specialist profiles unless a future
   task truly needs one.
 - Exception: `.qwen/agents/reviewer.md` pins `model: openai-responses:Qwen/Qwen3.8-Flash-Next`
   (independent, read-only, final-review role); it must never inherit the default no-thinking
   worker route.
+- Final reviewer runs at MEDIUM effort with its own reviewer anti-churn instructions.
 - Do not add task-specific acceptance rules to the persistent reviewer profile.
+- XHIGH is manual-only; never use it automatically for builder or final-review flow.
 
 ## Environment
 - Windows machine (PowerShell/cmd available); Qwen Code `run_shell_command` executes through
@@ -25,13 +29,15 @@ then code.
   `C:\LIFE\gh.exe run list --limit 5`.
 
 ## Mandatory git preflight (before touching anything)
-```
+
+```text
 git fetch --prune origin
 git status --short --branch
 git rev-parse HEAD
 git rev-parse origin/main
 git log --oneline --decorate -10
 ```
+
 Never assume local `main == origin/main`. If they diverge → STOP and report. No `reset --hard`,
 `git clean -fd`, force-push, or published-history rewrite. Do not work directly on `main`. Do not
 auto-add unknown untracked files.
@@ -43,12 +49,27 @@ auto-add unknown untracked files.
    (`feat(scope): … [spec <sha>]`). Pure fixes restoring specified behavior need no spec commit.
 3. Small commits: `type(scope): concrete outcome` (types: spec/feat/fix/test/docs/refactor/chore/
    ci); one concern per commit.
-4. Verify → push branch (never to `main`) → open PR (title follows the commit naming rule;
-   body: SPEC/BASE/GOAL/CHANGED/VERIFIED/PHYSICAL TEST/RISKS).
-5. Independent Qwen reviewer (separate agent/session, read-only) reviews the committed PR diff
-   and posts the verdict.
-6. Builder fixes findings with new commits. Owner or ChatGPT merges only when explicitly
-   requested; after merge, local `main` by fast-forward only.
+4. Builder verifies the task, pushes the branch (never `main`), and opens/updates the PR.
+   PR title follows the commit naming rule; body uses:
+   `SPEC / BASE / GOAL / CHANGED / VERIFIED / PHYSICAL TEST / RISKS`.
+5. After implementation is complete, the builder session STOPS. Do not perform final review
+   from the builder session.
+6. Start a NEW Qwen Code session for final review. The fresh session must use MEDIUM effort and
+   MUST invoke the named `reviewer` subagent. The parent session must not duplicate the review.
+7. The reviewer independently inspects the committed PR diff, current task/canon, real files,
+   relevant tests/CI, and exact reviewed HEAD, then returns:
+   `REVIEW: PASS` or `REVIEW: CHANGES REQUIRED`.
+8. If `CHANGES REQUIRED`: return to a builder session, fix with new commits, verify, push, then
+   repeat final review from another fresh Qwen Code session.
+9. If `PASS`: Qwen does NOT merge automatically. Stop and report the reviewed PR number and
+   reviewed HEAD SHA to the owner.
+10. The owner sends the PASSed PR to ChatGPT for a second independent GitHub-state check and
+    merge. ChatGPT verifies that the PR HEAD still matches the reviewed HEAD and checks relevant
+    GitHub/CI state before merging.
+11. After merge, local `main` may be synchronized by fast-forward only.
+
+The final reviewer must not inherit builder-session context; fresh-session review is the default.
+Builder summaries and reviewer summaries are not substitutes for real repository/GitHub evidence.
 
 ## Task checkpoint
 `.qwen/CHECKPOINT.md` — temporary branch handoff, not truth. Create only on working branches;
@@ -57,5 +78,6 @@ never let it remain in `main`. Git/SPEC beat the checkpoint on conflict.
 
 ## Final report format (concise)
 `STATUS / DONE / VERIFIED / NOT VERIFIED / BLOCKERS / NEXT`.
-Never claim "build passes", "feature works", or an acceptance test passed without evidence (a CI
-run URL, a downloaded artifact path, or the user's own hardware confirmation).
+
+Never claim "build passes", "feature works", or an acceptance test passed without evidence
+(a CI run URL, a downloaded artifact path, or the user's own hardware confirmation).
