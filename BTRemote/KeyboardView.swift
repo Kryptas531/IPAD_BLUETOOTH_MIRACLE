@@ -26,6 +26,7 @@ struct KeyboardView: View {
     @State private var resetting = false
     @State private var gameChromeVisible = true
     @State private var showKeyboard = false
+    @State private var showDirectInputControls = false
     @State private var mods: KeyboardModifiers = []
     @State private var held: KeyboardModifiers = []
     @FocusState private var focused: Bool
@@ -136,7 +137,32 @@ struct KeyboardView: View {
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 statusDot("dot.radiowaves.left.and.right", on: hid.isConnected)
-                statusDot("keyboard", on: hid.isActive)
+                #if os(iOS)
+                    // SPEC §7: Direct Input = compact status icon; long-press the
+                    // keyboard indicator to reveal capture/release controls.
+                    statusDot("keyboard", on: hid.isActive)
+                        .padding(4)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture {
+                            Haptics.tap()
+                            showDirectInputControls = true
+                        }
+                        .confirmationDialog(L10n.DirectInput.section, isPresented: $showDirectInputControls, titleVisibility: .visible) {
+                            Button(L10n.DirectInput.enable) {
+                                Haptics.tap()
+                                directInput.start(hid)
+                            }
+                            .disabled(!directInput.hasInputDevice)
+                            Button(L10n.DirectInput.release) {
+                                Haptics.tap()
+                                directInput.stop()
+                            }
+                            Button(L10n.Action.notNow, role: .cancel) {}
+                        }
+                #else
+                    statusDot("keyboard", on: hid.isActive)
+                #endif
+                statusDot("rectangle.and.hand.point.up.left", on: directInput.isCapturing)
             }
             #if os(iOS)
                 Button {
