@@ -70,7 +70,6 @@ struct ContentView: View {
                 }
             #endif
         }
-        .environmentObject(directInput)
         .onAppear(perform: _onAppear)
         .alert(L10n.Welcome.title, isPresented: $showWelcome) {
             Button(L10n.Welcome.viewGuide) {
@@ -92,6 +91,7 @@ struct ContentView: View {
                 guideSheet
             }
         }
+        .environmentObject(directInput)
     }
 
     private func _onAppear() {
