@@ -61,15 +61,34 @@ auto-add unknown untracked files.
    `REVIEW: PASS` or `REVIEW: CHANGES REQUIRED`.
 8. If `CHANGES REQUIRED`: return to a builder session, fix with new commits, verify, push, then
    repeat final review from another fresh Qwen Code session.
-9. If `PASS`: Qwen does NOT merge automatically. Stop and report the reviewed PR number and
-   reviewed HEAD SHA to the owner.
-10. The owner sends the PASSed PR to ChatGPT for a second independent GitHub-state check and
-    merge. ChatGPT verifies that the PR HEAD still matches the reviewed HEAD and checks relevant
-    GitHub/CI state before merging.
+9. Outside the explicit owner-invoked autopilot flow below, Qwen does NOT merge automatically.
+   Stop and report the reviewed PR number and reviewed HEAD SHA to the owner.
+10. In the manual flow, the owner sends the PASSed PR to ChatGPT for a second independent
+    GitHub-state check and merge. ChatGPT verifies that the PR HEAD still matches the reviewed
+    HEAD and checks relevant GitHub/CI state before merging.
 11. After merge, local `main` may be synchronized by fast-forward only.
 
 The final reviewer must not inherit builder-session context; fresh-session review is the default.
 Builder summaries and reviewer summaries are not substitutes for real repository/GitHub evidence.
+
+## Explicit `/autopilot` exception
+When the owner explicitly invokes `/autopilot`, `tools/qwen-autopilot.ps1` is authorized to
+orchestrate and merge the requested stages without returning to the owner between stages.
+
+The autopilot must:
+- use a fresh headless Qwen process for every builder, reviewer, and fixer pass;
+- keep the parent/orchestrator read-only with respect to product code;
+- run the reviewer as a fresh top-level Qwen process using `.qwen/agents/reviewer.md` as
+  instruction text on the inherited project MEDIUM route; do not depend on the nested pinned
+  reviewer route in this mode;
+- merge only after `REVIEW: PASS` for the unchanged current PR HEAD, exact-HEAD GREEN
+  `Build unsigned IPA` CI, a mergeable PR, and zero protected BLE/HID file changes;
+- stop on a dirty tracked worktree, ambiguity, protected-boundary changes, stale review,
+  failed exact-HEAD CI, or exhausted fixer loops;
+- fast-forward local `main` after each merge before launching the next stage.
+
+Invoking `/autopilot` is the owner's explicit merge authorization for that run only. Manual
+`/build`, `/final-review`, and `/fix-review` keep the normal no-auto-merge behavior.
 
 ## Task checkpoint
 `.qwen/CHECKPOINT.md` — temporary branch handoff, not truth. Create only on working branches;
