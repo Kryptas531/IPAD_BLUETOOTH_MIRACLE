@@ -38,6 +38,14 @@ enum GameInputMode: String {
         private let manager = CMMotionManager()
         private var previous: Attitude?
 
+        /// Fractional mouse counts left over from the previous sample. A 10 ms
+        /// sample at the default 180 counts/radian needs ~0.32 deg of rotation for
+        /// a single Int8 count, so sub-integer movement must be carried forward
+        /// instead of truncated away (SPEC §5.1 C). This is plain accumulation of
+        /// already-computed counts, not smoothing, filtering or interpolation.
+        private var carryX: Double = 0
+        private var carryY: Double = 0
+
         /// Start gyro input through `hid`. The current attitude becomes the baseline,
         /// so stale deltas are never replayed (SPEC §5.1 G).
         func start(_ hid: HIDInput) {
@@ -47,6 +55,8 @@ enum GameInputMode: String {
             }
             self.hid = hid
             previous = nil
+            carryX = 0
+            carryY = 0
             manager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] motion, _ in
                 guard let motion = motion else { return }
                 let attitude = motion.attitude.quaternion
@@ -65,6 +75,8 @@ enum GameInputMode: String {
         func stop() {
             manager.stopDeviceMotionUpdates()
             previous = nil
+            carryX = 0
+            carryY = 0
             isAvailable = false
         }
 
@@ -72,11 +84,15 @@ enum GameInputMode: String {
         /// itself emits no movement (SPEC §5.1 F).
         func recenter() {
             previous = nil
+            carryX = 0
+            carryY = 0
         }
 
         private func handle(_ current: Attitude) {
             guard let p = previous else {
                 previous = current
+                carryX = 0
+                carryY = 0
                 return
             }
             // Incremental rotation from the previously used attitude: q_previous⁻¹ ⊗ q_current.
@@ -90,8 +106,12 @@ enum GameInputMode: String {
             // Rotation vector (axis × angle) scaled by counts per radian: horizontal
             // rotation becomes positive dx, vertical rotation positive (down) dy (SPEC §5.1 E).
             let scale = (2.0 * atan2(norm, w) / norm) * sensitivity
-            var dx = rx * scale
-            var dy = ry * scale
+            // Add the counts left over from the previous sample before rounding to
+            // Int8, so no computed movement is ever dropped.
+            var dx = rx * scale + carryX
+            var dy = ry * scale + carryY
+            carryX = 0
+            carryY = 0
             // MouseReport deltas are Int8: split a large rotation across consecutive
             // reports so a fast turn does not lose distance (same rule as touch).
             while abs(dx) > 127 || abs(dy) > 127 {
@@ -101,8 +121,13 @@ enum GameInputMode: String {
                 dx -= chunkX
                 dy -= chunkY
             }
-            if dx != 0 || dy != 0 {
-                hid.move(dx: HIDInput.clamp(CGFloat(dx)), dy: HIDInput.clamp(CGFloat(dy)))
+            // Send whole counts only; a sub-integer remainder stays in the carry.
+            let wholeX = dx.rounded(.towardZero)
+            let wholeY = dy.rounded(.towardZero)
+            carryX = dx - wholeX
+            carryY = dy - wholeY
+            if wholeX != 0 || wholeY != 0 {
+                hid.move(dx: HIDInput.clamp(CGFloat(wholeX)), dy: HIDInput.clamp(CGFloat(wholeY)))
             }
         }
     }

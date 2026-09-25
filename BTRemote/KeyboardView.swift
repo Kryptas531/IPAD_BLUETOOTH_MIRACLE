@@ -159,7 +159,7 @@ struct KeyboardView: View {
         }
         #if os(iOS)
             .onChange(of: gameInputMode) { _ in configureGyro() }
-            .onChange(of: gyroSensitivity) { _ in configureGyro() }
+            .onChange(of: gyroSensitivity) { _ in applyGyroSensitivity() }
             // SPEC §5.1 G: becoming active again re-baselines the motion source.
             .onChange(of: scenePhase) { phase in
                 if phase == .active { configureGyro() }
@@ -172,6 +172,13 @@ struct KeyboardView: View {
     }
 
     #if os(iOS)
+        /// Apply the slider value to the running source only. Changing sensitivity must
+        /// not restart CoreMotion or clear the attitude baseline, otherwise moving the
+        /// slider re-baselines the gyro mid-use and loses deltas (SPEC §5.1 C/G).
+        @MainActor private func applyGyroSensitivity() {
+            gyro.sensitivity = gyroSensitivity
+        }
+
         /// Wire the gyro source to the existing relative-mouse report path and start or stop
         /// it according to the selected GAME input source (SPEC §5.1 B/G).
         @MainActor private func configureGyro() {
