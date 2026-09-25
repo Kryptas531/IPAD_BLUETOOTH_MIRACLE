@@ -174,6 +174,10 @@ extension L10n {
             "settings.scroll_speed"
         }
 
+        static var gyroSensitivity: LocalizedStringKey {
+            "settings.gyro_sensitivity"
+        }
+
         static var connection: LocalizedStringKey {
             "settings.connection"
         }

@@ -12,6 +12,17 @@
         }
       }
     },
+    "action.recenter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recenter"
+          }
+        }
+      }
+    },
     "action.not_now": {
       "extractionState": "manual",
       "localizations": {
@@ -1156,6 +1167,50 @@
         }
       }
     },
+    "input.source": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input"
+          }
+        }
+      }
+    },
+    "input.gyro": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gyro"
+          }
+        }
+      }
+    },
+    "input.hybrid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hybrid"
+          }
+        }
+      }
+    },
+    "input.motion_unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motion unavailable"
+          }
+        }
+      }
+    },
     "keyboard.tab": {
       "extractionState": "manual",
       "localizations": {
@@ -1691,6 +1746,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scroll speed"
+          }
+        }
+      }
+    },
+    "settings.gyro_sensitivity": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gyro sensitivity"
           }
         }
       }
