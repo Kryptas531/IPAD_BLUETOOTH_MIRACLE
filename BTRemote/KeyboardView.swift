@@ -717,6 +717,26 @@ struct KeyboardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(key.accessibility)
+        case let .sequence(chords):
+            // SPEC §7.2 F: VS Code `Open Folder` (`Ctrl+K` then `Ctrl+O`). Built from the existing
+            // `HIDInput.keyReports(for:modifiers:)` helper, so every chord reuses the existing
+            // single-key HID report path; the concatenated reports are sent as one paced queue.
+            Button {
+                Haptics.tap()
+                var reports: [KeyboardReport] = []
+                for (code, modifiers) in chords {
+                    reports.append(contentsOf: HIDInput.keyReports(for: code, modifiers: modifiers))
+                }
+                typist.send = hid.sendKeyboard
+                typist.enqueue(reports)
+            } label: {
+                keyLabel(key.label)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                    .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(key.accessibility)
         case let .userTarget(settingsKey):
             // SPEC §7.2 F: the concrete keystroke sequence for a project-specific target
             // (`Frost Pi`, `SideChatAI`, `Quick Open Browser Tab`, or any other the user adds) is
@@ -902,6 +922,11 @@ struct KeyCap {
         case key(Keycode)
         case modifier(KeyboardModifiers)
         case combo(Keycode, KeyboardModifiers)
+        /// SPEC §7.2 F: an ordered chord sequence, e.g. VS Code `Open Folder`, which is `Ctrl+K`
+        /// followed by `Ctrl+O`. Each element reuses an existing keycode and modifier set; the
+        /// down/up reports are paced through the existing `KeyTypist`, so no new keycode or HID
+        /// report type is introduced.
+        case sequence([(Keycode, KeyboardModifiers)])
         case consumer(ConsumerKey)
         /// SPEC §7.2 F: a user-defined target. The associated value is the **app-settings key**
         /// that holds the chord the user typed for that target (e.g. `Ctrl+Shift+P`), never a

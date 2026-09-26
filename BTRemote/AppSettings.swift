@@ -24,13 +24,17 @@ enum AppSettings {
     static let windowsPortKey = "BTRemote.windowsPort"
     static let windowsFingerprintKey = "BTRemote.windowsFingerprint"
 
-    // SPEC §7.2 F: the three project-specific VS Code targets (`Frost Pi`, `SideChatAI`,
-    // `Quick Open Browser Tab`) are user-defined. Each key stores one chord string the user types
-    // in Settings (e.g. "Ctrl+Shift+P"); no target path or keystroke sequence is hard-coded and no
-    // default is supplied. A blank value means "not configured": that keycap sends nothing.
+    // SPEC §7.2 F: the project-specific targets (`Frost Pi`, `SideChatAI`,
+    // `Quick Open Browser Tab`, `This PC`, `Documents`, `Downloads`) are user-defined. Each key
+    // stores one chord string the user types in Settings (e.g. "Ctrl+Shift+P"); no target path or
+    // keystroke sequence is hard-coded and no default is supplied. A blank value means "not
+    // configured": that keycap sends nothing.
     static let frostPiShortcutKey = "BTRemote.shortcutFrostPi"
     static let sideChatAIShortcutKey = "BTRemote.shortcutSideChatAI"
     static let quickOpenBrowserTabShortcutKey = "BTRemote.shortcutQuickOpenBrowserTab"
+    static let thisPCShortcutKey = "BTRemote.shortcutThisPC"
+    static let documentsShortcutKey = "BTRemote.shortcutDocuments"
+    static let downloadsShortcutKey = "BTRemote.shortcutDownloads"
 
     static let maxAdvertisedNameLength = 26
 

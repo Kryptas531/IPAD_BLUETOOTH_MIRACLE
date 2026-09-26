@@ -37,15 +37,18 @@
         /// existing keycap action; no new keycodes and no new HID reports are introduced.
         static let vscode = AppActionSet(title: "VS Code", keys: [
             KeyCap(.text("New Window"), "New Window", .combo(.n, [.leftCtrl, .leftShift])),
-            KeyCap(.text("Open Folder"), "Open Folder", .combo(.o, .leftCtrl)),
+            // VS Code `Open Folder` is the two-chord sequence `Ctrl+K` then `Ctrl+O`, not a single
+            // `Ctrl+O` chord (`Ctrl+O` alone is "Open File", which is not the specified action).
+            KeyCap(.text("Open Folder"), "Open Folder",
+                   .sequence([(.k, .leftCtrl), (.o, .leftCtrl)])),
             KeyCap(.text("Frost Pi"), "Frost Pi", .userTarget(AppSettings.frostPiShortcutKey)),
             KeyCap(.text("SideChatAI"), "SideChatAI", .userTarget(AppSettings.sideChatAIShortcutKey)),
-            KeyCap(.text("Explorer"), "Explorer", .combo(.b, .leftCtrl)),
-            KeyCap(.text("Source Control"), "Source Control", .combo(.g, .leftCtrl)),
+            KeyCap(.text("Explorer"), "Explorer", .combo(.e, [.leftCtrl, .leftShift])),
+            KeyCap(.text("Source Control"), "Source Control", .combo(.g, [.leftCtrl, .leftShift])),
             KeyCap(.text("New Terminal"), "New Terminal", .combo(.grave, .leftCtrl)),
             KeyCap(.text("Close Saved"), "Close Saved", .combo(.w, .leftCtrl)),
             KeyCap(.text("Split Editor Right"), "Split Editor Right", .combo(.backslash, .leftCtrl)),
-            KeyCap(.text("Move to the editor"), "Move to the editor", .combo(.e, .leftCtrl)),
+            KeyCap(.text("Move to the editor"), "Move to the editor", .combo(.digit1, .leftCtrl)),
             KeyCap(.text("Quick Open Browser Tab"), "Quick Open Browser Tab",
                    .userTarget(AppSettings.quickOpenBrowserTabShortcutKey)),
         ])
@@ -69,15 +72,16 @@
         /// Windows File Explorer target (user-editable).
         ///
         /// SPEC §7.2 F "useful action set": nine actions. `This PC`, `Documents` and `Downloads`
-        /// and `New Window` are user-configurable placeholders: their concrete keystroke target is
-        /// NOT hard-coded (no folder path is baked in) and the custom UI is wired later. No new
-        /// keycodes or HID reports are introduced.
+        /// are user-configurable targets: their concrete keystroke target is NOT hard-coded (no
+        /// folder path or chord is baked in); each keycap carries the app-settings key holding the
+        /// chord the user entered, like the VS Code custom targets. A blank setting leaves the
+        /// keycap disabled and sending nothing. No new keycodes or HID reports are introduced.
         static let explorer = AppActionSet(title: "File Explorer", keys: [
             KeyCap(.text("New Window"), "New Window", .combo(.n, .leftCtrl)),
             KeyCap(.text("New Tab"), "New Tab", .combo(.t, .leftCtrl)),
-            KeyCap(.text("This PC"), "This PC", .combo(.o, .leftCtrl)),
-            KeyCap(.text("Documents"), "Documents", .combo(.d, .leftCtrl)),
-            KeyCap(.text("Downloads"), "Downloads", .combo(.f, .leftCtrl)),
+            KeyCap(.text("This PC"), "This PC", .userTarget(AppSettings.thisPCShortcutKey)),
+            KeyCap(.text("Documents"), "Documents", .userTarget(AppSettings.documentsShortcutKey)),
+            KeyCap(.text("Downloads"), "Downloads", .userTarget(AppSettings.downloadsShortcutKey)),
             KeyCap(.text("Search"), "Search", .combo(.e, .leftCtrl)),
             KeyCap(.text("Select All"), "Select All", .combo(.a, .leftCtrl)),
             KeyCap(.text("New Folder"), "New Folder", .combo(.n, [.leftCtrl, .leftShift])),
@@ -367,7 +371,8 @@
     /// Compact settings section for the Windows `WindowsForeground` helper: the Windows PC address,
     /// port and pinned certificate fingerprint, the one-time pairing code, Connect / Reconnect and
     /// Disconnect / Unpair controls with live connected-or-error status, and the three user-defined
-    /// app-layout shortcuts. It configures `WindowsForegroundClient.shared`, the same instance the
+    /// app-layout shortcuts (three VS Code/browser targets and three optional Explorer targets). It
+    /// configures `WindowsForegroundClient.shared`, the same instance the
     /// CONTROL surface renders from, so there is exactly one link and one stored secret.
     struct WindowsForegroundSettingsView: View {
         @StateObject private var windows = WindowsForegroundClient.shared
@@ -377,6 +382,9 @@
         @AppStorage(AppSettings.frostPiShortcutKey) private var frostPiShortcut = ""
         @AppStorage(AppSettings.sideChatAIShortcutKey) private var sideChatAIShortcut = ""
         @AppStorage(AppSettings.quickOpenBrowserTabShortcutKey) private var quickOpenBrowserTabShortcut = ""
+        @AppStorage(AppSettings.thisPCShortcutKey) private var thisPCShortcut = ""
+        @AppStorage(AppSettings.documentsShortcutKey) private var documentsShortcut = ""
+        @AppStorage(AppSettings.downloadsShortcutKey) private var downloadsShortcut = ""
         /// The one-time code read off the Windows console. Entry only: it is never persisted, and
         /// after a successful pair the client reuses the secret held in the Keychain instead.
         @State private var pairingCode = ""
@@ -437,7 +445,7 @@
             }
             Section(
                 header: Text("User-defined shortcuts"),
-                footer: Text("For the project-specific VS Code targets (Frost Pi, SideChatAI, Quick Open Browser Tab). Enter one chord per target, for example Ctrl+Shift+P or F5. A target with no chord stays disabled and sends nothing; a configured chord is sent through the existing keyboard key path to the Windows app in focus. Nothing here is fixed: change the chord for a different project without a code change.")
+                footer: Text("For the project-specific VS Code targets (Frost Pi, SideChatAI, Quick Open Browser Tab). Enter one chord per target, for example Ctrl+Shift+P or F5. A target with no chord stays disabled and sends nothing; a configured chord is sent through the existing keyboard key path to the Windows app in focus. Nothing here is fixed: change the chord for a different project without a code change. The last three targets are optional chords for the Windows helper's File Explorer actions: enter a chord or leave the field empty, no folder paths are stored or assumed here.")
             ) {
                 TextField("Frost Pi (e.g. Ctrl+Shift+P)", text: $frostPiShortcut)
                     .textInputAutocapitalization(.never)
@@ -446,6 +454,15 @@
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                 TextField("Quick Open Browser Tab (e.g. Ctrl+Shift+B)", text: $quickOpenBrowserTabShortcut)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                TextField("This PC (optional chord, no path)", text: $thisPCShortcut)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                TextField("Documents (optional chord, no path)", text: $documentsShortcut)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                TextField("Downloads (optional chord, no path)", text: $downloadsShortcut)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
             }
