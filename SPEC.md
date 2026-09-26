@@ -68,8 +68,11 @@ right)`, `move(dx:dy:)`, `scroll(wheel)`, `keyReports(for:modifiers:)`; ASCII→
 — plus `BTRemote/Resources/*.json` (not in git; downloaded during CI by
 `ci_scripts/ci_post_clone.sh` from `NordicSemiconductor/bluetooth-numbers-database`, verified by
 reading the script) and `BTRemote/Info.plist`/`entitlements.plist` (contents not read in prior
-sessions — ci-worker zone). The only exception any spec commit may grant is defined in §5.1 J:
-adding `NSMotionUsageDescription` to `BTRemote/Info.plist`; everything else there stays untouched.
+sessions — ci-worker zone). The only exceptions any spec commit may grant are: adding
+`NSMotionUsageDescription` to `BTRemote/Info.plist` (§5.1 J), and adding
+`NSLocalNetworkUsageDescription` to `BTRemote/Info.plist` with exactly the text `BTRemote connects
+to your paired Windows PC on the local network to show app-specific controls.` (§7.2). No other
+key may be added there and everything else in those two files stays untouched.
 
 ## 5. IMPLEMENTED and CONTRACT-DEFINED behavior
 (§5.1 code now EXISTS in current main — implemented per spec `b9caa6d` in `1284aca` with fixes
@@ -392,6 +395,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   connection; the endpoint must reject any peer that does not present it. Re-pairing requires
   repeating the local handshake. The pairing secret, tokens and certificates are never committed to
   git (the §12 "never commit credentials" rule applies).
+  The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
+  when it actually pairs with or connects to the helper — never at launch and never for the plain
+  §7.1 path. If the user denies that permission, the app behaves exactly as §7.1 defines (generic
+  CONTROL layout); denial must not affect BLE HID pairing or any existing input path.
 - **D. Executable identity.** The helper identifies the foreground application by its **executable
   identity** — the full path and file name of the process owning the foreground window. It does NOT
   identify apps by window title (titles are user- and locale-editable and are not trusted for
@@ -437,7 +444,8 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   not implemented**. The core product line stays exactly "IPAD → BLE HID → WINDOWS"; the helper sits
   beside that path and only selects which layout the iPad presents, it never carries input.
 - **I. Verification / limits.** Implementation may claim CI only. Foreground-detection correctness,
-  secure pairing, per-app layout correctness and the unknown/disconnected fallback all stay
+  secure pairing, per-app layout correctness, the iOS local-network permission prompt (requested
+  only at pairing/connect time) and the unknown/disconnected/denied-permission fallback all stay
   "implemented, physical verification pending" until the owner runs the added §9 checks with the
   helper on the real Windows PC + iPad.
 
