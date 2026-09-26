@@ -492,8 +492,14 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         state = peripheral.state
         _trace("CB state -> \(peripheral.state.rawValue)")
-        if peripheral.state == .poweredOn, isHIDServiceAllowed, !isHIDServiceAdded {
-            installServices()
+        if peripheral.state == .poweredOn, isHIDServiceAllowed {
+            if isHIDServiceAdded {
+                // Services from before the power cycle are still bound to this CBPeripheralManager
+                // instance, so there is nothing to reinstall: just resume advertising.
+                startAdvertisingNow()
+            } else {
+                installServices()
+            }
         }
         if peripheral.state != .poweredOn {
             isAdvertising = false
