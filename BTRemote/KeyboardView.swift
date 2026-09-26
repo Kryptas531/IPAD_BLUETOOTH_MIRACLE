@@ -718,7 +718,7 @@ struct KeyboardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(key.accessibility)
-        case let .layout(action):
+        case .layout:
             // SPEC §7.2 F: the concrete chord, chord sequence or typed text a user-configured
             // action sends is data from the layout document, never hard-coded. Pressing the keycap
             // sends exactly the existing HID key reports for that target through the existing

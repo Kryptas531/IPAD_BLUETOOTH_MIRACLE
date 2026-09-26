@@ -208,6 +208,19 @@ import SwiftUI
         /// so the Settings form and the CONTROL surface must share one client.
         nonisolated(unsafe) static let shared = WindowsForegroundClient()
 
+        /// `nonisolated` because Swift 6 requires the initial value of a `nonisolated(unsafe)`
+        /// static property — and the `@StateObject private var windows =
+        /// WindowsForegroundClient.shared` defaults in `KeyboardView` and
+        /// `WindowsForegroundSettingsView` — to be constructible without actor isolation, while the
+        /// implicit `init()` of a `@MainActor` class is main-actor-isolated. Every stored property
+        /// already has a non-isolated initial value, so this initializer only forwards to
+        /// `NSObject.init()`; the published state, the pairing flow and the TLS pinning handler keep
+        /// the same main-actor structure as before. Nothing else constructs the class: both views use
+        /// `WindowsForegroundClient.shared`, so the single-instance contract of SPEC §7.2 F holds.
+        nonisolated override init() {
+            super.init()
+        }
+
         /// The Windows application identity the helper last reported (`vscode` | `chrome` |
         /// `explorer` | `generic` | a user-defined profile id); `nil` keeps the generic layout.
         /// SPEC §7.2 F: this is a lookup key into the user's layout document, not an enum, so a new
@@ -333,7 +346,7 @@ import SwiftUI
                         // The value is the profile id the user configured, matched case-insensitively
                         // by `AppLayouts.set(for:)`; `generic` (or anything unknown) has no profile,
                         // so CONTROL keeps the §7.1 layout.
-                        self.identity = decoded.identity
+                        self.identity = identity
                     }
                 } catch {
                     self.closeSocket()
@@ -373,8 +386,11 @@ import SwiftUI
             // SPEC §7.2: the helper's certificate is self-signed precisely so it can be pinned.
             // Accept it only when the SHA-256 digest of its leaf certificate equals the
             // fingerprint the helper printed and the user entered; otherwise send no credential.
-            guard challenge.protectionSpace.authenticationMethod == URLSession.AuthenticationMethod.serverTrust,
-                  let trust = challenge.protectionSpace.serverTrust,
+            // The helper's endpoint is TLS-only, so the server-trust challenge is the only one it
+            // can raise, and `serverTrust` is nil for every other protection space (those still get
+            // the default handling with no credential). The authentication-method name is therefore
+            // not spelled out: Foundation has no `URLSession.AuthenticationMethod` member.
+            guard let trust = challenge.protectionSpace.serverTrust,
                   let certificate = SecTrustGetCertificateAtIndex(trust, 0)
             else {
                 completionHandler(.performDefaultHandling, nil)
@@ -591,7 +607,7 @@ extension LayoutAction {
     /// concrete keystroke target is resolved at press time by `UserTargets`, so no path, command or
     /// keystroke sequence is hard-coded and no new keycode or HID report type is introduced.
     func keyCap() -> KeyCap {
-        KeyCap(.verbatim(label), 1, LocalizedStringKey(stringLiteral: label), .layout(self))
+        KeyCap(.verbatim(label), weight: 1, LocalizedStringKey(stringLiteral: label), .layout(self))
     }
 }
 
