@@ -582,8 +582,8 @@ can pass it.)
 - **Gyro aim:** implemented (SPEC §5.1; commits `1284aca` + fixes `28867db`/`aa4443c`; CI green
   run `36203590465`; merged `c89997f`) — physical verification pending per §5.1 L / §9.
   `BTRemote/Info.plist` now contains `NSMotionUsageDescription` with exactly the text
-  `BTRemote uses device motion to control the mouse in GAME mode.` (the single protected-file
-  exception §5.1 J allows).
+  `BTRemote uses device motion to control the mouse in GAME mode.` (the motion protected-file
+  exception §5.1 J allows; the separate local-network exception is defined in §4/§7.2).
 - **Unified CONTROL surface (§7.1):** implemented — code `fd50ae1` (`feat(ios): add unified
   CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
