@@ -391,10 +391,16 @@ extension L10n {
         }
     }
 
-    /// Windows native input surface modes (P2). `touch`/`deck` are not implemented yet.
+    /// Windows native input surface modes (P2). `touch` is the experimental placeholder;
+    /// `control` is the single unified surface that replaced the separate TRACKPAD and DECK
+    /// modes on iPad (SPEC §7.1 A).
     enum Input {
         static var game: LocalizedStringKey {
             "input.game"
+        }
+
+        static var control: LocalizedStringKey {
+            "input.control"
         }
 
         static var trackpad: LocalizedStringKey {
@@ -407,6 +413,21 @@ extension L10n {
 
         static var deck: LocalizedStringKey {
             "input.deck"
+        }
+
+        /// Entry control for the full DECK panel (SPEC §7.1 C).
+        static var moreShortcuts: LocalizedStringKey {
+            "input.more_shortcuts"
+        }
+
+        /// Entry control for the custom keycap panel (SPEC §7.1 E).
+        static var extraKeys: LocalizedStringKey {
+            "input.extra_keys"
+        }
+
+        /// Entry control for the independent text-entry field (SPEC §7.1 E).
+        static var textEntry: LocalizedStringKey {
+            "input.text_entry"
         }
 
         static var inDevelopment: LocalizedStringKey {
@@ -435,6 +456,43 @@ extension L10n {
 
         static var kbShort: LocalizedStringKey {
             "input.kb_short"
+        }
+    }
+
+    /// Always-visible CONTROL quick actions (SPEC §7.1 B); every action reuses the report of the
+    /// matching DECK key in §5 "DECK".
+    enum Deck {
+        /// `copy` is a Swift contextual keyword, so the Swift name is suffixed (see `noneString`).
+        static var copyKey: LocalizedStringKey {
+            "deck.copy"
+        }
+
+        static var paste: LocalizedStringKey {
+            "deck.paste"
+        }
+
+        static var cut: LocalizedStringKey {
+            "deck.cut"
+        }
+
+        static var undo: LocalizedStringKey {
+            "deck.undo"
+        }
+
+        static var taskView: LocalizedStringKey {
+            "deck.task_view"
+        }
+
+        static var screenshot: LocalizedStringKey {
+            "deck.screenshot"
+        }
+
+        static var search: LocalizedStringKey {
+            "deck.search"
+        }
+
+        static var playPause: LocalizedStringKey {
+            "deck.play_pause"
         }
     }
 

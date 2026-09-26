@@ -8,6 +8,36 @@ enum PadMode: String {
     case trackpad
     case touch
     case deck
+    /// Single Windows-input surface (trackpad + shortcuts + text entry) that replaced the
+    /// separate TRACKPAD and DECK modes on iPad (SPEC §7.1 A).
+    case control
+
+    /// iPad uses the unified CONTROL surface; macOS keeps the upstream trackpad surface.
+    static var defaultMode: PadMode {
+        #if os(iOS)
+            .control
+        #else
+            .trackpad
+        #endif
+    }
+
+    /// SPEC §7.1 A upgrade rule: a previously persisted TRACKPAD or DECK mode selection migrates
+    /// to CONTROL on the first launch after this change, so an existing install never opens into
+    /// a removed mode. GAME, TOUCH and every other persisted setting are preserved unchanged.
+    static func migratePersistedSelection() {
+        guard let stored = PadMode(rawValue: UserDefaults.standard.string(forKey: AppSettings.padModeKey) ?? ""),
+              stored == .trackpad || stored == .deck
+        else { return }
+        UserDefaults.standard.set(PadMode.control.rawValue, forKey: AppSettings.padModeKey)
+    }
+}
+
+/// One of the three mutually exclusive temporary CONTROL surfaces (SPEC §7.1 C/E).
+/// `nil` means no surface is open and the pad owns the whole surface.
+enum AppSurface {
+    case textEntry
+    case extraKeys
+    case moreShortcuts
 }
 
 struct KeyboardView: View {
@@ -17,7 +47,7 @@ struct KeyboardView: View {
     @Environment(\.hid) private var hid
     @AppStorage(AppSettings.developerModeKey) private var developerMode = false
     @AppStorage(AppSettings.liveTypingKey) private var liveTyping = true
-    @AppStorage(AppSettings.padModeKey) private var padMode = PadMode.trackpad
+    @AppStorage(AppSettings.padModeKey) private var padMode = PadMode.defaultMode
     @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
     @AppStorage(AppSettings.gameInputModeKey) private var gameInputMode = GameInputMode.touch
     @AppStorage(AppSettings.gyroSensitivityKey) private var gyroSensitivity = AppSettings.defaultGyroSensitivity
@@ -32,6 +62,8 @@ struct KeyboardView: View {
     @State private var resetting = false
     @State private var gameChromeVisible = true
     @State private var showKeyboard = false
+    /// SPEC §7.1 C/E: at most one of "Text entry" / "Extra keys" / "More shortcuts" is open.
+    @State private var surface: AppSurface? = nil
     @State private var showDirectInputControls = false
     @State private var mods: KeyboardModifiers = []
     @State private var held: KeyboardModifiers = []
@@ -48,7 +80,9 @@ struct KeyboardView: View {
 
     private var editor: some View {
         GeometryReader { geo in
-            if geo.size.width > geo.size.height {
+            if padMode == .control {
+                controlSurface(landscape: geo.size.width > geo.size.height)
+            } else if geo.size.width > geo.size.height {
             if padMode == .game {
                 ZStack(alignment: .top) {
                     TrackpadPanel(
@@ -160,6 +194,8 @@ struct KeyboardView: View {
         .onChange(of: liveTyping) { _ in clear() }
         .task(id: padMode) {
             gameChromeVisible = true
+            // SPEC §7.1 C/E: entering a mode starts with every temporary surface closed.
+            surface = nil
             #if os(iOS)
                 configureGyro()
             #endif
@@ -174,11 +210,170 @@ struct KeyboardView: View {
             .onChange(of: scenePhase) { phase in
                 if phase == .active { configureGyro() }
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
+            // SPEC §7.1 E: opening the "Text entry" surface and focusing its field are different
+            // events. Only tapping/focusing the field makes Text entry the visible surface.
+            // CONTROL keeps the keyboard safe area so the field, Send and Clear stay visible and
+            // usable above the iOS keyboard; GAME/macOS keep the previous behaviour.
+            .onChange(of: focused) { isFocused in
+                guard padMode == .control else { return }
+                if isFocused {
+                    surface = .textEntry
+                } else if surface == .textEntry {
+                    surface = nil
+                }
+            }
+            .ignoresSafeArea(.keyboard, edges: padMode == .control ? [] : .bottom)
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) { accessoryBar }
             }
         #endif
+    }
+
+    // MARK: - §7.1 unified CONTROL surface
+
+    /// The live pad stays the visual and interactive centre in both orientations; the compact
+    /// always-visible controls only take their own strip at the outer edges (landscape) or above
+    /// and below (portrait), so the pad keeps the dominant share of the surface (SPEC §7.1 B/F).
+    @ViewBuilder
+    private func controlSurface(landscape: Bool) -> some View {
+        if landscape {
+            VStack(spacing: 4) {
+                controlBar
+                    .padding(.horizontal, 8)
+                HStack(spacing: 4) {
+                    keyColumn(Array(quickKeys.prefix(4)))
+                    padSurface
+                    keyColumn(Array(quickKeys.suffix(4)))
+                }
+                entryControls
+            }
+        } else {
+            VStack(spacing: 4) {
+                controlBar
+                keyRow(Array(quickKeys.prefix(4)))
+                padSurface
+                keyRow(Array(quickKeys.suffix(4)))
+                entryControls
+            }
+        }
+    }
+
+    /// The live trackpad with the single open temporary surface drawn over it (SPEC §7.1 C/E).
+    private var padSurface: some View {
+        ZStack(alignment: .bottom) {
+            TrackpadPanel(hid: hid, mode: .control, metrics: lowEnergy.performanceMetrics)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            surfaceOverlay
+        }
+    }
+
+    /// SPEC §7.1 B: the always-visible quick set contains only these existing DECK actions and the
+    /// reports they already send — no new keycodes and no new reports. `ALT+TAB` and `WIN+L` are
+    /// deliberately absent; they are combined keycaps belonging to the "Extra keys" panel (§7.1 E).
+    private var quickKeys: [KeyCap] {
+        [
+            KeyCap(.text(L10n.Deck.copyKey), L10n.Deck.copyKey, .combo(.c, .leftCtrl)),
+            KeyCap(.text(L10n.Deck.paste), L10n.Deck.paste, .combo(.v, .leftCtrl)),
+            KeyCap(.text(L10n.Deck.cut), L10n.Deck.cut, .combo(.x, .leftCtrl)),
+            KeyCap(.text(L10n.Deck.undo), L10n.Deck.undo, .combo(.z, .leftCtrl)),
+            KeyCap(.text(L10n.Deck.taskView), L10n.Deck.taskView, .combo(.tab, .leftGUI)),
+            KeyCap(.text(L10n.Deck.screenshot), L10n.Deck.screenshot, .combo(.s, [.leftGUI, .leftShift])),
+            KeyCap(.text(L10n.Deck.search), L10n.Deck.search, .combo(.s, .leftGUI)),
+            KeyCap(.text(L10n.Deck.playPause), L10n.Deck.playPause, .consumer(.playPause)),
+        ]
+    }
+
+    /// The three distinct entry controls of SPEC §7.1 E: "More shortcuts" (the full DECK panel),
+    /// "Extra keys" (the custom keycap panel) and "Text entry" (the input field). They are
+    /// mutually exclusive: opening one closes the others.
+    private var entryControls: some View {
+        HStack(spacing: 4) {
+            entryButton(L10n.Input.moreShortcuts, tag: .moreShortcuts)
+            entryButton(L10n.Input.extraKeys, tag: .extraKeys)
+            entryButton(L10n.Input.textEntry, tag: .textEntry)
+        }
+    }
+
+    private func entryButton(_ label: LocalizedStringKey, tag: AppSurface) -> some View {
+        Button {
+            Haptics.tap()
+            toggleSurface(tag)
+        } label: {
+            Text(label)
+                .font(.footnote)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(surface == tag ? Color.accentColor : groupFill))
+                .foregroundColor(surface == tag ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// SPEC §7.1 C/E: one single temporary panel per entry control. Only the control hit areas are
+    /// interactive; the decorative material behind them explicitly opts out of hit testing so the
+    /// pad's free surface stays touchable (SPEC §7.1 D).
+    @ViewBuilder
+    private var surfaceOverlay: some View {
+        if let surface {
+            surfacePanel(surface)
+        }
+    }
+
+    @ViewBuilder
+    private func surfacePanel(_ surface: AppSurface) -> some View {
+        switch surface {
+        case .textEntry:
+            inputField
+                .padding(8)
+                .background { nonInteractiveSurface }
+        case .extraKeys:
+            VStack(spacing: 6) {
+                keyPanel
+                bottomStrip
+            }
+            .padding(8)
+            .background { nonInteractiveSurface }
+        case .moreShortcuts:
+            DeckPanel(hid: hid)
+                .padding(8)
+                .background { nonInteractiveSurface }
+        }
+    }
+
+    /// Decorative material behind a temporary surface; never participates in hit testing.
+    private var nonInteractiveSurface: some View {
+        Rectangle()
+            .fill(.thinMaterial)
+            .opacity(0.94)
+            .allowsHitTesting(false)
+    }
+
+    /// SPEC §7.1 C/E: opening a surface closes the other two; re-tapping the same entry control
+    /// closes it. Opening "Extra keys"/"More shortcuts" clears field focus so the native iOS
+    /// keyboard is never shown next to a custom panel, and opening "Text entry" alone never forces
+    /// focus into the field. Closing "Text entry" clears focus too, so the native iOS keyboard is
+    /// dismissed together with the surface.
+    private func toggleSurface(_ target: AppSurface) {
+        if surface == target {
+            surface = nil
+            if target == .textEntry { focused = false }
+            return
+        }
+        surface = target
+        if target != .textEntry { focused = false }
+    }
+
+    /// Mirrors `keyRow` vertically: the landscape quick set sits in narrow columns at the outer
+    /// edges so the pad keeps the whole middle of the screen.
+    private func keyColumn(_ keys: [KeyCap]) -> some View {
+        VStack(spacing: cellGap) {
+            ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
+                keyCapButton(key)
+                    .frame(width: 76, height: keyHeight)
+            }
+        }
     }
 
     #if os(iOS)
@@ -292,9 +487,15 @@ struct KeyboardView: View {
     private var modeSwitcher: some View {
         HStack(spacing: 4) {
             modeButton(L10n.Input.game, tag: .game)
-            modeButton(L10n.Input.trackpad, tag: .trackpad)
-            modeButton(L10n.Input.touch, tag: .touch, disabled: true)
-            modeButton(L10n.Input.deck, tag: .deck)
+            #if os(iOS)
+                // SPEC §7.1 A: on iPad there is no separate TRACKPAD and no separate DECK mode.
+                modeButton(L10n.Input.control, tag: .control)
+                modeButton(L10n.Input.touch, tag: .touch, disabled: true)
+            #else
+                modeButton(L10n.Input.trackpad, tag: .trackpad)
+                modeButton(L10n.Input.touch, tag: .touch, disabled: true)
+                modeButton(L10n.Input.deck, tag: .deck)
+            #endif
         }
     }
 
@@ -334,12 +535,25 @@ struct KeyboardView: View {
             keyCapButton(KeyCap(.text(L10n.Keyboard.enter), L10n.Keyboard.enter, .key(.return)))
             Button {
                 Haptics.tap()
-                showKeyboard.toggle()
-                if showKeyboard { focused = true }
+                if padMode == .control {
+                    // SPEC §7.1 E: this is the explicit close/toggle affordance inside the
+                    // temporary "Extra keys" panel. Toggling Extra keys must never focus the
+                    // text field and must never summon the native iOS keyboard.
+                    toggleSurface(.extraKeys)
+                } else {
+                    showKeyboard.toggle()
+                    if showKeyboard { focused = true }
+                }
             } label: {
-                Image(systemName: "keyboard")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
+                if padMode == .control {
+                    Label(L10n.Input.extraKeys, systemImage: "keyboard")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                } else {
+                    Image(systemName: "keyboard")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                }
             }
         }
         .frame(height: 34)
@@ -470,6 +684,18 @@ struct KeyboardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(key.accessibility)
+        case let .consumer(code):
+            Button {
+                Haptics.tap()
+                hid.tap(consumer: code)
+            } label: {
+                keyLabel(key.label)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                    .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(key.accessibility)
         }
     }
 
@@ -477,7 +703,7 @@ struct KeyboardView: View {
     private func keyLabel(_ label: KeyCap.Label) -> some View {
         switch label {
         case let .symbol(name): Image(systemName: name).font(.body)
-        case let .text(value): Text(value).font(.footnote)
+        case let .text(value): Text(value).font(.footnote).lineLimit(1).minimumScaleFactor(0.5)
         case .blank: Color.clear
         }
     }
@@ -616,6 +842,7 @@ private struct KeyCap {
         case key(Keycode)
         case modifier(KeyboardModifiers)
         case combo(Keycode, KeyboardModifiers)
+        case consumer(ConsumerKey)
     }
 
     let label: Label

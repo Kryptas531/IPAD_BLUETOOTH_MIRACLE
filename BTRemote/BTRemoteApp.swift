@@ -26,6 +26,11 @@ struct BTRemoteApp: App {
 
     init() {
         UserDefaults.standard.register(defaults: [AppSettings.useServiceChangedKey: true])
+        #if os(iOS)
+            // SPEC §7.1 A: an existing iPad install that persisted TRACKPAD or DECK opens in
+            // CONTROL. macOS keeps its existing TRACKPAD/DECK choices untouched.
+            PadMode.migratePersistedSelection()
+        #endif
     }
 
     private var hid: HIDInput {
