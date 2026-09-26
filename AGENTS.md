@@ -5,8 +5,14 @@ Single canonical spec: `SPEC.md` (versioned by Git SHA only). Git history is the
 no parallel roadmap/architecture/P2/layout docs.
 
 ## Read order
-1. `AGENTS.md` → 2. `SPEC.md` → 3. provider file (`QWEN.md`) → 4. task checkpoint if present
-(`.qwen/CHECKPOINT.md`) → 5. code.
+1. `AGENTS.md` → 2. `SPEC.md` → 3. active task / active `.pi/` prompt →
+4. directly relevant code and repository state.
+
+Provider-specific files are NOT part of the default MAIN Pi read order.
+
+- `QWEN.md` and `.qwen/*` apply only when Qwen Code itself is explicitly being used.
+- A Pi MAIN session using a Qwen model must NOT treat `QWEN.md` as its runtime instructions.
+- Model family/name does not determine runtime role.
 
 ## Rules
 - Current Git + current `SPEC.md` beat old summaries and old docs.
@@ -24,37 +30,42 @@ no parallel roadmap/architecture/P2/layout docs.
 - Never silently fix unrelated findings.
 
 ## Roles
-- **Builder:** edits and commits.
-- **Reviewer:** a separate Qwen agent/session; reviews the committed PR diff only; does not edit
-  the builder's work; returns exactly `REVIEW: PASS` or `REVIEW: CHANGES REQUIRED` plus concrete
-  findings.
-- **Orchestrator:** may coordinate fresh builder/reviewer/fixer sessions but must not implement
-  product code itself. It may merge only when the owner explicitly invokes an autopilot flow whose
-  provider instructions define strict same-HEAD review, CI, mergeability and protected-file gates.
-- Do not maintain many specialist agent profiles — keep only `.qwen/agents/reviewer.md` unless a
-  future task truly needs more.
-
-## Pi orchestration exception
-
-For Pi-based autonomous development runs:
-
-- The root/main Pi session may use `openai-codex/gpt-6-luna` as the orchestrator.
-- Routine implementation and review must use the project Pi agents:
-  - `qwen-builder` → corporate Qwen
-  - `qwen-reviewer` → corporate Qwen
-- The Luna orchestrator delegates implementation/review and should not act as the routine code writer.
+- **Builder:** implementation role. In Pi autonomous runs this is `qwen-builder`.
+- **Reviewer:** independent read-only review role. In Pi autonomous runs this is `qwen-reviewer`.
+- **Orchestrator:** the root/main Pi session. Its role comes from the active Pi session and prompt,
+  NOT from model family or provider name.
+- MAIN may run on Qwen, Luna, Sol, or another configured model without changing its role.
+- MAIN coordinates implementation/review and does not act as the routine product-code writer.
 - External CLI subagents such as `claude-code`, `codex-exec`, and `cursor-agent` remain prohibited.
-- Qwen Code-specific rules in `QWEN.md` continue to apply when Qwen Code itself is used.
+- `QWEN.md` and `.qwen/*` are Qwen Code runtime material only.
+
+## Merge authorization
+There are two distinct delivery modes:
+
+1. **Manual flow**
+   - builder/reviewer may prepare a PASSed PR;
+   - merge requires a separate explicit owner/ChatGPT merge request.
+
+2. **Owner-invoked Pi `/autopilot`**
+   - invoking `/autopilot` is explicit authorization for that autonomous run;
+   - MAIN may push, create/update PRs, wait for CI, repair repository-fixable failures,
+     and merge automatically once every gate in the active Pi autopilot prompt passes;
+   - no additional owner confirmation is required between PASS, CI GREEN, and normal merge.
+
+Do not reinterpret an active owner-invoked Pi autopilot as manual mode merely because
+the MAIN model is Qwen.
 
 ## Git workflow
 1. fetch + preflight (never assume local `main == origin/main`; if diverged → STOP and report) →
 2. branch from verified `origin/main` → 3. if contract/scope changes: SPEC commit first →
 4. implementation in small commits → 5. verification → 6. push branch → 7. open PR →
-8. separate Qwen reviewer reviews committed PR diff → 9. reviewer posts `REVIEW: PASS` /
-`REVIEW: CHANGES REQUIRED` → 10. builder fixes findings with new commits → 11. owner or ChatGPT
-merges only when explicitly requested; an explicitly owner-invoked provider autopilot may perform
-that merge only under its documented strict gates → 12. after merge, local `main` updates by
-fast-forward only.
+8. independent reviewer reviews committed exact HEAD → 9. reviewer returns PASS /
+CHANGES REQUIRED → 10. builder fixes concrete findings when required →
+11. delivery follows the active mode:
+   - manual flow: stop before merge and wait for explicit merge instruction;
+   - owner-invoked Pi `/autopilot`: merge automatically after all documented review,
+     exact-HEAD CI, mergeability, protection, and manual/hardware gates pass →
+12. after merge, local `main` updates by fast-forward only.
 
 Do not push feature work directly to `main`. No `reset --hard`, `git clean -fd`, force-push, or
 published-history rewrites. Do not delete or commit unknown local scratch.
@@ -80,8 +91,8 @@ RISKS:
 ```
 
 ## Task checkpoint
-`.qwen/CHECKPOINT.md` — a temporary branch handoff, not canonical truth. Create it only on a
-working feature/cleanup branch; commit it on that branch so GitHub/ChatGPT can read it; keep it
-≤30 lines; update only at meaningful handoff points; delete it before final merge; it must never
-remain in `main`. Template fields: BRANCH / BASE_MAIN / HEAD / SPEC_COMMIT / GOAL / DONE /
-VERIFIED / PENDING / NEXT / BLOCKERS. If checkpoint conflicts with Git/SPEC — Git/SPEC wins.
+Provider-specific checkpoints are not canonical repository truth.
+
+- MAIN Pi does not read `.qwen/CHECKPOINT.md` by default.
+- `.qwen/CHECKPOINT.md` is relevant only to an explicitly running Qwen Code workflow.
+- Git state and `SPEC.md` always beat any temporary provider-specific checkpoint.

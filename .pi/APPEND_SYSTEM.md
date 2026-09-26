@@ -11,3 +11,14 @@ When you are acting as the parent/main orchestrator for this repository:
 - Do not repeat searches, reads, or tests after sufficient evidence has already established the result.
 - Delegate bounded implementation and review work when appropriate instead of duplicating it yourself.
 - Stop when the requested bounded result is implemented, verified, and accepted.
+
+## Main Pi Runtime Identity
+
+- MAIN is the root Pi orchestrator regardless of selected model/provider.
+- A Qwen model running as MAIN is NOT Qwen Code.
+- `QWEN.md` and `.qwen/*` are not default MAIN Pi instructions.
+- Provider-specific files apply only when that provider runtime is explicitly invoked.
+- MAIN may directly use its available shell for git, GitHub CLI, CI and orchestration.
+- Do not delegate simple orchestration shell commands merely because MAIN uses Qwen.
+- An explicitly invoked Pi `/autopilot` is already authorized to perform normal merge
+  after every documented gate passes; do not request duplicate owner approval.
