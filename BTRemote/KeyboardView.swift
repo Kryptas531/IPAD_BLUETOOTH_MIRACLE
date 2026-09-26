@@ -234,15 +234,30 @@ struct KeyboardView: View {
                 statusDot("rectangle.and.hand.point.up.left", on: directInput.isCapturing)
             }
             #if os(iOS)
-                Button {
-                    Haptics.tap()
-                    openSettings()
+                // Single top-bar options control: Settings and the Connection/Setup route.
+                // SetupView keeps the live connection state and connected-device names, so the
+                // bar itself stays free of any permanent status panel.
+                Menu {
+                    Button {
+                        Haptics.tap()
+                        openSettings()
+                    } label: {
+                        Label(L10n.Action.settings, systemImage: "slider.horizontal.3")
+                    }
+                    Button {
+                        Haptics.tap()
+                        goToSetup()
+                    } label: {
+                        Label(L10n.Remote.openSetup, systemImage: "network")
+                    }
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.caption)
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.bordered)
-                .accessibilityLabel(L10n.Tab.settings)
+                .accessibilityLabel(L10n.Remote.menu)
             #endif
         }
     }
