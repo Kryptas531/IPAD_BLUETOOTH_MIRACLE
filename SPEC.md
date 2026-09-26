@@ -114,18 +114,25 @@ see §12.)
   build-unsigned); hardware behavior stays NOT VERIFIED until the user's physical iPad +
   Windows test. History: first built in `ac87c61` (CI run `35642707603`) — superseded,
   because there an ordinary keypress released a physically held modifier.
-- **Extended keys + keyboard overlay:** Insert/Delete/Home/End/PgUp/PgDn/arrows + temporary
-  F1–F12 grid (`BTRemote/KeyboardView.swift`). Dedicated combined keycaps ALT+TAB and WIN+L are
-  part of the contract above (they send exactly that combination via `keyReports`); they live in
-  the temporary keyboard/extended overlay so the canonical DECK 4×4 stays unchanged;
+- **Extended keys + keyboard overlay:** Insert/Delete/Home/End/PgUp/PgDn/arrows/SPACE/PRTSC +
+  right-side Ctrl/Alt Gr/Shift/Win modifier keycaps + temporary F1–F12 grid, plus the bottom
+  strip Ctrl/Win/Alt/Shift + ESC/TAB/ENTER + the panel toggle (`BTRemote/KeyboardView.swift`).
+  No shipped control may be dropped from this inventory. Dedicated combined keycaps ALT+TAB and
+  WIN+L are part of the contract above (they send exactly that combination via `keyReports`);
+  they live only in this custom panel, so the canonical DECK 4×4 stays unchanged and those two
+  combined keycaps are not duplicated in the always-visible quick-action set (§7.1 B);
   implemented in `dbe36ab` (CI run `35652625241` GREEN; physical verification pending).
   The original extended keys are IMPLEMENTED (CI VERIFIED).
+  Under §7.1 E this custom panel is the temporary **Extra keys** panel and is explicitly NOT the
+  iOS software keyboard, and it is a different panel from the §7.1 C **More shortcuts** panel.
 - **DECK:** Windows control surface — shortcuts + navigation + F-keys; page 1 (COPY/PASTE/CUT/
-  UNDO, TASK MGR, EXPLORER/SEARCH, TASK VIEW = Win+Tab, DESK ←/→ = Win+Ctrl+arrows, SCREENSHOT =
-  Win+Shift+S, vol/mute/play-pause), page 2 (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/
-  PGUP/UP/PGDN/LEFT/DOWN/RIGHT/F-KEYS → temporary F-grid); swipe or buttons to switch
-  (`BTRemote/RemoteView.swift`). Single-report combos work via `keyReports(for:modifiers:)`.
-  IMPLEMENTED (CI VERIFIED).
+  UNDO, TASK MGR, EXPLORER/SEARCH/DESKTOP, TASK VIEW = Win+Tab, DESK ←/→ = Win+Ctrl+arrows,
+  SCREENSHOT = Win+Shift+S, vol/mute/play-pause), page 2 (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/
+  HOME/END/PGUP/UP/PGDN/PRTSC/LEFT/DOWN/RIGHT/F-KEYS → temporary F-grid); swipe or buttons to
+  switch (`BTRemote/RemoteView.swift`). Single-report combos work via `keyReports(for:modifiers:)`.
+  IMPLEMENTED (CI VERIFIED). Under §7.1 B/C these same actions are re-homed into CONTROL's
+  always-visible quick actions + the temporary **More shortcuts** panel; every action keeps the
+  exact report it sends today (this bullet remains the list of record).
 - **Direct Input:** a physical Windows keyboard/mouse attached to the iPad is captured through
   Game Compatible Controllers (iOS branch: `GCKeyboard.coalesced` / `GCMouse.current`,
   `DirectInputController.swift:384,391`) and forwarded to Windows as HID reports; release chord
@@ -135,7 +142,8 @@ see §12.)
 - **GAME high-fidelity input:** `touchesBegan`/`touchesMoved(_:with:)`/`touchesEnded` +
   `UIEvent.coalescedTouches(for:)` (`TouchpadView.swift:222`), chronological sample processing,
   delta from previous ACTUAL sample, predicted touches NOT used for HID mouse movement.
-  TRACKPAD stays gesture-based (UIPanGestureRecognizer). IMPLEMENTED (CI VERIFIED).
+  TRACKPAD stays gesture-based (UIPanGestureRecognizer). IMPLEMENTED (CI VERIFIED). After §7.1
+  this same gesture surface is the one hosted by CONTROL; its gesture behaviour does not change.
 - **BLE mouse backpressure:** `pendingMouseDX/DY/Wheel` accumulation (`HIDPeripheral.swift:52,118`),
   clamp/split on send (`mouseChunk`), `drainPendingMouse()` after `peripheralManagerIsReady`
   (:382,:582); button state preserved; keyboard/consumer semantics untouched; counters feed
@@ -148,14 +156,19 @@ see §12.)
   shown in developer mode (`TrackpadPanel.swift`). IMPLEMENTED.
 - **Modes UI:** compact switcher GAME | TRACKPAD | TOUCH | DECK + compact status ("BT ● KB ●").
   TOUCH = **EXPERIMENTAL / in development** (absolute digitizer not implemented). IMPLEMENTED.
+  This is the shipped state at base `3a3ddf2`; the unified **CONTROL** mode defined in §7.1
+  supersedes the TRACKPAD/DECK halves of this list once implemented. Do not describe CONTROL as
+  implemented before its implementation commit.
 
 ### 5.1 CONTRACT DEFINED AND IMPLEMENTED (physical acceptance pending)
 Swift code for this now exists in main (implemented in `1284aca`, fixes `28867db`/`aa4443c`,
 CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the contract of record
 (spec-first rule at the top of this file; spec commit `b9caa6d`).
 - **A. Scope:** GAME mode only. Touch remains the default GAME input and its current behavior
-  (see "GAME high-fidelity input" above) must stay unchanged. TRACKPAD, TOUCH and DECK are not
-  affected.
+  (see "GAME high-fidelity input" above) must stay unchanged. This GAME-only gyro contract is not
+  changed by §7.1: the former TRACKPAD gestures stay exactly as they are and simply become
+  CONTROL's pad behavior, the former DECK reports and actions are rehomed inside CONTROL unchanged,
+  and TOUCH remains the experimental, unaffected path.
 - **B. Gyro:** map device-attitude increments (the delta from the previously used attitude) to
   cursor movement — relative HID mouse `dx`/`dy` sent through the existing relative-mouse report
   path. No new HID report type, no absolute digitizer. When the mode is Gyro, touch movement is
@@ -215,46 +228,155 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
 
 ## 7. UX canon
 (Migrated from `docs/CANON LAYOUT.md` — the former `docs/LAYOT PATCH.md` is SUPERSEDED. Re-derive
-details from git history if needed; do not recreate these files.)
-- Primary device: iPad Air 11" M2 2024, LANDSCAPE. Idea: maximum input surface, minimum permanent
-  controls.
-- Very compact top bar `[GAME | TRACKPAD | TOUCH | DECK]` + tiny indicators (`●BT ⌨`); top bar can
+details from git history if needed; do not recreate these files. §7.1 supersedes the parts of this
+section that assume separate TRACKPAD / DECK top-level modes; nothing else in §7 is weakened.)
+- Primary device: iPad Air 11" M2 2024. The Windows-input surface must be usable in BOTH
+  orientations (§7.1 F); landscape stays the orientation the §5/§6 measurements were taken in.
+  Idea: maximum input surface, minimum permanent controls.
+- Very compact top bar `[GAME | CONTROL | TOUCH]` + tiny indicators (`●BT ⌨`); top bar can
   auto-hide in GAME. Settings = modal/sheet, not a big tab.
+  - SUPERSEDED wording (this line used to read `[GAME | TRACKPAD | TOUCH | DECK]`): there is no
+    separate TRACKPAD mode and no separate DECK mode any more — one **CONTROL** mode replaces both
+    (§7.1 A). GAME stays separate; TOUCH stays the experimental/disabled placeholder.
 - No large permanent CONNECTED / DIRECT INPUT / debug / setup-status panels and no long status
   texts; connection/Direct Input = tiny indicators only.
-- Trackpad ≈85–90 % of the useful area; no permanent wide right sidebar / scroll column / L-M-R
-  rows. Extended keys open temporary overlays, never shrink the trackpad permanently.
+- Trackpad stays the visual and interactive centre of the Windows-input surface and keeps the
+  dominant share of the useful area (≈85–90 % of it in landscape); no permanent wide right
+  sidebar / scroll column / L-M-R rows. The single permitted exception is the small always-visible
+  quick-action set around the pad (§7.1 B) — a compact edge/ring strip of existing actions, never
+  a wide sidebar, never a second full-screen surface, never the multi-row fixed keyboard.
+  Custom extended keys ("Extra keys") open as temporary overlays and never shrink the trackpad
+  permanently. "Extra keys" (custom keyboard panel) and "More shortcuts" (full DECK panel) are two
+  distinct panels with separate entry controls; only one of them may be open at a time.
 - GAME ≈ fullscreen input surface; controls (Touch/Gyro/Hybrid, sensitivity, gyro sensitivity,
   recenter, debug toggle) only as temporary overlay; optional LMB/RMB zones semi-transparent/
   configurable/removable; do not draw a WASD keyboard (external physical keyboard assumed).
 - TOUCH ≈100 % surface, controls hidden, edge gestures only (EXPERIMENTAL).
-- DECK = Windows control grid 4×4 (page 1 shortcuts, page 2 navigation, F-KEYS → temporary
-  F1–F12 grid) — a Windows control surface, not the old media/TV remote.
+- DECK is no longer a separate full-screen page: it is the Windows control action set hosted
+  inside CONTROL (always-visible quick actions + temporary "More shortcuts", §7.1 B/C; this is not
+  the custom "Extra keys" keyboard panel, §7.1 E). DECK remains a Windows control surface, not the
+  old media/TV remote, and its action list and HID reports (§5 "DECK") are unchanged.
 - Direct Input: compact status icon; capture/release controls via long-press on keyboard
   indicator or in settings; a physical Windows keyboard must keep working as is.
 - Dictation: small 🎙 push-to-dictate button, temporary transcript not covering the central
-  trackpad (not implemented — placeholder).
+  trackpad (not implemented — placeholder; NOT part of the §7.1 contract, see §8 stage 5).
 - All touch buttons: immediate pressed visual state (+ short click sound if enabled; toggle
-  ON/OFF visually clear); never add latency to the input pipeline for animations.
+  ON/OFF visually clear); never add latency to the input pipeline for animations. Every always-
+  visible CONTROL control must stay reachable in both orientations and must not cover the
+  trackpad's free touch area (only button hit areas may intercept).
 - Working rule from past sessions: first INSPECT the current implementation, minimal layout
   refactor over existing working views, preserve all implemented features, working input paths,
   Direct Input, current CI and BLE behavior.
 
+## 7.1 Unified CONTROL mode — CONTRACT DEFINED, NOT YET IMPLEMENTED
+Spec-first contract for the operator-requested unified iPad control UX. Defined at base
+`3a3ddf2`; no Swift, README or other file is changed by this spec commit. The implementation
+commit must reference this spec SHA. Nothing here changes any HID report, keycode, gesture,
+Direct Input path or the protected boundary (§4 / §5.1 J) — only the surface that hosts existing
+actions moves.
+- **A. One mode.** One top-level mode **CONTROL** replaces the separate TRACKPAD and DECK modes.
+  Name chosen: `CONTROL` — concise and accurate (this one surface is where the iPad controls
+  Windows: trackpad + shortcuts + text entry), whereas `TRACKPAD` wrongly implied a trackpad-only
+  surface and `DECK` was a second destination for the same job. Top bar: `GAME | CONTROL | TOUCH`.
+  GAME keeps today's behaviour and its temporary GAME chrome exactly as implemented (§5, §5.1).
+  TOUCH stays the experimental/disabled placeholder. No screen may present a second full-screen
+  DECK surface, and no workflow may require a mode switch to reach the trackpad or a shortcut.
+  Upgrade rule (testable): a previously persisted TRACKPAD or DECK mode selection must migrate to
+  CONTROL on first launch after this change, so an existing install never opens into a blank or
+  invalid mode; unrelated persisted app settings are preserved unchanged.
+- **B. Always-live pad + reachable shortcuts.** CONTROL always presents the live central trackpad
+  and reachable DECK shortcuts at the same time in the same mode. Always-visible quick-action set
+  (concrete, existing actions and existing reports only, no new keycodes, no new reports):
+  `COPY` (Ctrl+C), `PASTE` (Ctrl+V), `CUT` (Ctrl+X), `UNDO` (Ctrl+Z), `TASK VIEW` (Win+Tab),
+  `SCREENSHOT` (Win+Shift+S), `SEARCH` (Win+S), `PLAY/PAUSE` (consumer). Small icon/label buttons
+  only — never a full keycap keyboard and never wide enough to pull the pad away from the centre.
+  `ALT+TAB` and `WIN+L` are deliberately NOT in this set: they are combined keycaps belonging to
+  the custom keyboard panel (§7.1 E) and the always-visible set must stay a subset of existing
+  DECK reports (§5 "DECK").
+- **C. Everything else stays reachable, temporarily.** **"More shortcuts"** is one single temporary
+  panel that shows the whole remaining DECK surface: page 1 (TASK MGR, EXPLORER, DESKTOP,
+  DESK ←/→, VOL−, MUTE, VOL+) and page 2 (ESC, TAB, ENTER, BACKSPACE, INSERT, DELETE, HOME, END,
+  PGUP, UP, PGDN, PRTSC, LEFT, DOWN, RIGHT, F-KEYS → the temporary F1–F12 grid) and the page-switch
+  control itself — all still reachable from CONTROL, without leaving CONTROL and without dropping
+  any shipped control. Same action → same report (single-report `keyReports(for:modifiers:)` /
+  `sendConsumer`) as listed in §5 "DECK". The actions that also sit in the always-visible
+  quick-action set (B) appear in both places; that duplication is intentional.
+  "More shortcuts" (DECK panel) and "Extra keys" (custom keyboard panel, E) are **two distinct
+  panels with separate entry controls** — neither may be implemented or labelled as the other, and
+  only one of the two may be open at a time: opening one closes the other. Overlap between them is
+  intentional and must not be "cleaned up": the custom panel deliberately repeats the common
+  navigation keys (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/PGUP/PGDN/arrows/SPACE/PRTSC/
+  F1–F12) because those keycaps have to sit in the same panel as the modifiers they combine with
+  (§5 A–G).
+- **D. Touch-through.** The trackpad stays the visual and interactive centre and its free surface
+  must remain touchable: only actual button/control hit areas may intercept touches. Decorative
+  material behind controls must not participate in hit testing (reuse the existing
+  `.allowsHitTesting(false)` treatment from the GAME chrome); a control layer must never swallow
+  pad gestures.
+- **E. Text entry ≠ custom key panel ≠ iOS software keyboard ≠ "More shortcuts".** Two things
+  that today share one screen must stay separate:
+  - **Text entry** — the shipped text-entry field with Send/Clear (`KeyboardView` `TextField` +
+    `KeyTypist` + `HIDInput.type(char)`, §4/§5 "Keyboard"). It is **independent of the custom
+    keycap panel**: the field is not embedded in it, and it must stay reachable without ever
+    opening that panel. Text entry is its own temporary surface, opened by its own clearly
+    labelled, always-reachable **"Text entry"** control (a third entry control next to
+    "More shortcuts" and "Extra keys"; no mode switch needed to reach it).
+  - **Extra keys** — the app's custom extended-key panel (Ctrl/Win/Alt/Shift hold + right-side
+    Ctrl/Alt Gr/Shift/Win + ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/PGUP/PGDN/arrows/
+    SPACE/PRTSC + F1–F12 + ALT+TAB/WIN+L, together with the bottom strip Ctrl/Win/Alt/Shift +
+    ESC/TAB/ENTER + the panel toggle). It is a distinct thing from the iOS software keyboard, and a
+    distinct thing from the §7.1 C "More shortcuts" DECK panel. It is closed by default and toggled
+    by one clearly labelled **"Extra keys"** control that also carries an explicit close/toggle
+    affordance. It contains **only** the shipped custom keycaps listed above — no embedded text
+    field, no embedded Send/Clear. No shipped keycap listed above may be omitted.
+  Text entry, live-typing, Send/Clear and the §5 A–G modifier semantics stay unchanged (whatever
+  panel holds the modifiers must also hold the keys they combine with, so hold-Alt-then-press-Tab,
+  the right-side modifiers, SPACE, PRTSC and the dedicated ALT+TAB / WIN+L keycaps still work while
+  that panel is open).
+  Opening a surface and focusing a field are different events. **Opening** the "Text entry" surface
+  alone must not force focus into the field and must not summon the iOS keyboard: the field stays
+  visible on the surface and the user taps it. Only **tapping/focusing** that separate field may
+  summon the system keyboard. Auto-focusing the field when the surface opens is allowed only if
+  this spec explicitly specifies it and the behaviour is user-visible; it is not specified here.
+  **The "Extra keys" toggle must never focus the TextField, must never open "Text entry", and must
+  never summon the native iOS keyboard.**
+  Mutual exclusion (predictable, avoids two panels covering the pad): opening "Text entry" closes
+  "Extra keys" and closes "More shortcuts"; opening "Extra keys" while the native keyboard is up
+  dismisses the native keyboard (focus cleared) so only Extra keys is shown; tapping/focusing the
+  text-entry field while Extra keys is open closes Extra keys so only the system keyboard is shown;
+  opening "Extra keys" while "More shortcuts" is open closes "More shortcuts", and vice versa. At
+  most one of the three app surfaces ("Text entry"/native keyboard, "More shortcuts", "Extra keys")
+  is ever visible — but the "Text entry" field and the OS keyboard are one workflow, not two
+  competing panels: once the field is focused, the field must stay present and usable while the
+  iOS software keyboard is visible, so live typing, Send and Clear can still be used above it.
+- **F. Responsive orientation.** Landscape: pad central with the compact action controls at the
+  outer edges. Portrait: pad centred/largest with the compact controls above and below. No huge
+  permanent sidebar, no mode-specific full-screen switch, no cluttered fixed keyboard above the
+  pad (the multi-row keycap panel and the always-visible bottom strip both become the temporary
+  "Extra keys" panel). All existing trackpad gestures (1-finger move, tap → LMB, two-finger move
+  → scroll, two-finger tap → RMB, drag) and all existing DECK key reports must be preserved
+  exactly.
+- **G. Verification / limits.** Implementation may claim CI only; behaviour stays "implemented,
+  physical verification pending" until the owner runs the §9 checks in both orientations. No
+  dictation work is included here (still §8 stage 5 / §13).
+
 ## 8. Active milestone
-Per the reconciled roadmap (2026-09-20/21):
-1. UX polish per the UX canon (§7) → 2. TRACKPAD usability → 3. GAME usability → 4. Direct Input /
-Windows keyboard semantics → 5. DECK → 6. Gyro aim → 7. Native dictation RU/EN → 8. Feedback →
-9. experimental TOUCH / absolute digitizer.
+Per the reconciled roadmap (2026-09-20/21, renumbered for §7.1):
+1. Unified CONTROL surface — UX canon (§7) + unified control contract (§7.1); this absorbs the
+   former stages "TRACKPAD usability" and "DECK", which no longer exist as separate modes
+2. GAME usability → 3. Direct Input / Windows keyboard semantics → 4. Gyro aim → 5. Native
+dictation RU/EN → 6. Feedback → 7. experimental TOUCH / absolute digitizer.
 
 Implemented: **modifier hold + combined keycaps after `0bccedc`** — contract defined in §5
 (A–G, spec `d1b68d9`); implemented in `dbe36ab`, CI GREEN (run `35652625241`).
 Remaining: the user's physical verification per §9.
 
-Stage **6. Gyro aim** is implemented — contract defined in §5.1 (spec `b9caa6d`); code in
+Stage **4. Gyro aim** is implemented — contract defined in §5.1 (spec `b9caa6d`); code in
 `1284aca` with fixes `28867db`/`aa4443c`; CI green run `36203590465`; merged `c89997f` via
-PR #10. The owner's §9 hardware acceptance for it is still outstanding. The next unstarted
-roadmap stage is therefore **7. Native dictation RU/EN** — per §13 this requires its own
-preceding spec commit (no dictation contract is written here).
+PR #10. The owner's §9 hardware acceptance for it is still outstanding. Stage **1. Unified
+CONTROL surface** is specified but **not implemented** (§7.1); the next unstarted roadmap stage
+after it is **5. Native dictation RU/EN** — per §13 this requires its own preceding spec commit
+(no dictation contract is written here).
 
 ## 9. Acceptance criteria
 (Procedure migrated from `docs/PHYSICAL_TEST.md`. Only the user, on the physical iPad + Windows,
@@ -266,24 +388,52 @@ can pass it.)
 - 2. Launch: app opens at Setup; "Bluetooth powered on" / "advertising: yes"; auto-start.
 - 3. Pairing: Windows Settings → Bluetooth & devices → add the advertised device; app shows
   connected state.
-- 4. TRACKPAD gestures: 1-finger move, tap → LMB, two-finger move → scroll, two-finger tap → RMB,
-  drag; GAME raw movement path tested separately (high-rate input must not drop deltas).
+- 4. CONTROL/trackpad gestures (there is no separate TRACKPAD mode after §7.1): 1-finger move,
+  tap → LMB, two-finger move → scroll, two-finger tap → RMB, drag; GAME raw movement path tested
+  separately (high-rate input must not drop deltas).
 - 5. Performance metrics: developer mode, GAME, continuous movement ≥10 s; record touch Hz, raw
   samples Hz, mouse generated Hz, BLE accepted Hz, backpressure, pending, coalesced, lost delta,
   avg/max interval. CI cannot infer these.
 - 6. Keyboard: typing via input field reaches Windows; ESC/ENTER keycaps work.
 - 7. Shortcuts: Win tap → Start opens. Momentary modifier keycaps must support hold-and-press
   combos: hold Alt (or Ctrl / Shift / Win) → press another keycap → the combined report is sent.
-  Dedicated ALT+TAB and WIN+L keycaps in the temporary keyboard/extended overlay must send
-  exactly that combination. Single-report DECK keys (e.g. TASK VIEW) keep working. These await
-  the user's physical test.
+  Dedicated ALT+TAB and WIN+L keycaps in the temporary keyboard/extended overlay ("Extra keys",
+  §7.1 E) must send exactly that combination. Single-report DECK keys (e.g. TASK VIEW) keep
+  working. These await the user's physical test.
 - 8. Lock-screen acceptance (main proof): from Windows, WIN+L (dedicated combined keycap) →
   lock; using ONLY the iPad: wake screen, move cursor, click, type PIN/password, log in; after
   login: Win (Start, short tap) → Alt+Tab (dedicated ALT+TAB keycap, or hold Alt + press Tab) →
   typing → scroll → left/right click. (Implemented in `dbe36ab`; not yet tested
   on hardware — until then, Alt+Tab can be verified via a physical keyboard through
   Direct Input.)
-- Ready = all mandatory items (former MVP table 1–14) work AND lock-screen acceptance passes.
+- 9. Unified CONTROL surface (repeat items 4–7 in EACH orientation, landscape and portrait):
+  (a) no separate TRACKPAD or DECK top-level mode exists — top bar is `GAME | CONTROL | TOUCH`;
+  (b) the central touchpad and the compact quick actions are visible together, pad central (and
+  largest) with actions on the outer edges in landscape / above and below in portrait;
+  (c) every existing DECK shortcut and F-key is still reachable — spot-check COPY, PASTE, CUT,
+  UNDO, TASK VIEW, SCREENSHOT, SEARCH, PLAY/PAUSE from the always-visible set, and TASK MGR,
+  EXPLORER, DESKTOP, DESK ←/→, VOL−, MUTE, VOL+, ESC, TAB, PRTSC, ENTER, BACKSPACE, INSERT,
+  DELETE, HOME, END, PGUP, UP, PGDN, LEFT, DOWN, RIGHT and F1–F12 from the temporary
+  "More shortcuts" DECK panel — and each still reaches Windows;
+  (d) trackpad gestures from item 4 still work in the pad's free areas while controls are present;
+  (e) "Extra keys" opens the custom keyboard panel — a panel distinct from "More shortcuts", with
+  its own separate entry control, and opening it closes "More shortcuts" — contains only the
+  shipped custom keycaps (no embedded text field, no embedded Send/Clear), does NOT summon the iOS
+  keyboard, does NOT focus the text field, and closes explicitly via its own affordance; the
+  shipped custom controls must all still be present and working from it: PRTSC reaches Windows,
+  SPACE types a space, and the right-side Ctrl/Alt Gr/Shift/Win modifiers hold-and-combine exactly
+  like the left ones (§5 A–G);
+  (f) "Text entry" is reachable on its own, independently of "Extra keys" (its own entry control,
+  no mode switch, the field is not inside the custom keycap panel); opening the "Text entry"
+  surface alone does not force focus and does not by itself raise the iOS keyboard; tapping the
+  text-entry field DOES summon the system keyboard and typing still reaches Windows;
+  (g) opening "Extra keys" while the native keyboard is up leaves exactly one surface visible;
+  opening "Text entry" closes "Extra keys" and "More shortcuts"; once the field is focused it
+  stays present and usable while the native iOS keyboard is visible, and live typing, Send and
+  Clear all still work with that keyboard on screen;
+  (h) GAME behaviour is unchanged.
+- Ready = all mandatory items (former MVP table 1–14) plus item 9 work AND lock-screen acceptance
+  passes.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
@@ -313,6 +463,9 @@ can pass it.)
   `BTRemote/Info.plist` now contains `NSMotionUsageDescription` with exactly the text
   `BTRemote uses device motion to control the mouse in GAME mode.` (the single protected-file
   exception §5.1 J allows).
+- **Unified CONTROL surface (§7.1):** spec-defined only, NOT implemented — the shipped app still
+  has separate TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift`
+  at `3a3ddf2`); implementation must follow this spec commit.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
   HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
