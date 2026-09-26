@@ -218,33 +218,47 @@ struct KeyboardView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 6) {
+                // SPEC §7: tiny indicators only — Bluetooth radio waves = BLE/HID link up,
+                // hand-in-rectangle = HID service ready, keyboard = Direct Input capturing.
                 statusDot("dot.radiowaves.left.and.right", on: hid.isConnected)
+                statusDot("rectangle.and.hand.point.up.left", on: hid.isActive)
                 #if os(iOS)
                     // SPEC §7: Direct Input = compact status icon; long-press the
                     // keyboard indicator to reveal capture/release controls.
-                    statusDot("keyboard", on: hid.isActive)
+                    statusDot("keyboard", on: directInput.isCapturing)
                         .padding(4)
                         .contentShape(Rectangle())
                         .onLongPressGesture {
                             Haptics.tap()
                             showDirectInputControls = true
                         }
-                        .confirmationDialog(L10n.DirectInput.section, isPresented: $showDirectInputControls, titleVisibility: .visible) {
-                            Button(L10n.DirectInput.enable) {
-                                Haptics.tap()
-                                directInput.start(hid)
-                            }
-                            .disabled(!directInput.hasInputDevice)
-                            Button(L10n.DirectInput.release) {
-                                Haptics.tap()
-                                directInput.stop()
+                        // Enable is offered only while nothing is captured; Release only while it is.
+                        // With no external keyboard/trackpad detected the dialog explains why
+                        // Enable would be unavailable.
+                        .confirmationDialog(
+                            directInput.hasInputDevice
+                                ? L10n.DirectInput.section
+                                : L10n.DirectInput.iosNoDevice,
+                            isPresented: $showDirectInputControls,
+                            titleVisibility: .visible
+                        ) {
+                            if directInput.isCapturing {
+                                Button(L10n.DirectInput.release) {
+                                    Haptics.tap()
+                                    directInput.stop()
+                                }
+                            } else {
+                                Button(L10n.DirectInput.enable) {
+                                    Haptics.tap()
+                                    directInput.start(hid)
+                                }
+                                .disabled(!directInput.hasInputDevice)
                             }
                             Button(L10n.Action.notNow, role: .cancel) {}
                         }
                 #else
-                    statusDot("keyboard", on: hid.isActive)
+                    statusDot("keyboard", on: directInput.isCapturing)
                 #endif
-                statusDot("rectangle.and.hand.point.up.left", on: directInput.isCapturing)
             }
             #if os(iOS)
                 // Single top-bar options control: Settings and the Connection/Setup route.
