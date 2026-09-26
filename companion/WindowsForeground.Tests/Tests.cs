@@ -78,6 +78,33 @@ Check("reconnect request json",
 Check("pair and reconnect messages differ",
     ForegroundServer.PairRequestJson("123456") != ForegroundServer.ReconnectRequestJson("123456"));
 
+// --- auth mode selection (which credential the next client must present) ---
+// No stored secret at all (fresh helper) => the device must use the printed
+// one-time code.
+Check("no stored secret selects pairing",
+    ForegroundServer.SelectAuthMode(null) == AuthMode.Pair);
+// A persisted but unusable blob (wrong length: partial write, foreign file) is
+// not a credential, so pairing must stay available.
+Check("empty stored blob selects pairing",
+    ForegroundServer.SelectAuthMode(Array.Empty<byte>()) == AuthMode.Pair);
+Check("wrong-length stored blob selects pairing",
+    ForegroundServer.SelectAuthMode(new byte[16]) == AuthMode.Pair);
+// A valid persisted 32-byte secret => the already-paired device reconnects
+// with it; the helper must NOT demand a code it never printed.
+Check("valid 32-byte stored secret selects reconnect",
+    ForegroundServer.SelectAuthMode(new byte[32]) == AuthMode.Reconnect);
+Check("longer stored blob is not a valid secret (selects pairing)",
+    ForegroundServer.SelectAuthMode(new byte[64]) == AuthMode.Pair);
+// Whichever mode is chosen, the corresponding wire string is the exact one the
+// client has to send.
+Check("pair mode expects the pair message",
+    ForegroundServer.SelectAuthMode(null) == AuthMode.Pair &&
+    ForegroundServer.PairRequestJson("000000") == "{\"type\":\"pair\",\"code\":\"000000\"}");
+Check("reconnect mode expects the reconnect message",
+    ForegroundServer.SelectAuthMode(new byte[32]) == AuthMode.Reconnect &&
+    ForegroundServer.ReconnectRequestJson("abc") == "{\"type\":\"reconnect\",\"secret\":\"abc\"}");
+
+
 if (failures.Count == 0)
 {
     Console.WriteLine($"ALL TESTS PASSED ({checks} checks)");

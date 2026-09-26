@@ -12,8 +12,10 @@
 // certificate, and waits for the iPad. Until the connecting device sends the
 // exact {"type":"pair","code":"<code>"} message, the helper sends no data at
 // all; after that exchange the server hands the device a long-lived 256-bit
-// secret (DPAPI-protected on disk) so a later reconnect authenticates with
-// {"type":"reconnect","secret":"<secret>"} instead of a new code.
+// secret (DPAPI-protected on disk) so a later reconnect — after a Wi-Fi drop,
+// an iPad reboot or a restart of this helper — authenticates with
+// {"type":"reconnect","secret":"<secret>"} instead of a new code. The auth
+// mode is therefore decided by the stored secret, not by a fresh code.
 // The helper never sends HID commands and never reports window titles,
 // arbitrary process data, or executable names; unknown executables map to
 // "generic" (SPEC §7.1/§7.2 E).
@@ -79,7 +81,9 @@ namespace WindowsForeground
                 // The pairing code is the only secret proving the connecting
                 // device is the user's iPad. It is local (read off this
                 // console), one-time (consumed on the first successful pair),
-                // and is never sent to any third party.
+                // and is never sent to any third party. It only exists when no
+                // durable secret is stored yet: a device that was already
+                // paired reconnects with that secret instead of a new code.
                 string pairCode = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
 
                 var server = new ForegroundServer(cert, endpoint, pairCode, secretPath);
@@ -89,17 +93,21 @@ namespace WindowsForeground
                 Console.WriteLine("[windows-foreground] TLS certificate SHA-256 fingerprint " +
                                   $"(pin this on the iPad): {cert.GetCertHashString(HashAlgorithmName.SHA256)}");
                 byte[]? storedSecret = ForegroundServer.ProtectedStore.TryRead(secretPath);
-                if (storedSecret == null || storedSecret.Length == 0)
+                if (ForegroundServer.SelectAuthMode(storedSecret) == AuthMode.Reconnect)
                 {
-                    Console.WriteLine($"[windows-foreground] one-time pairing code: {pairCode}");
+                    // The helper already has the device secret, so the client
+                    // must authenticate with it: printing a new code here would
+                    // be misleading (and the server would never accept it).
+                    Console.WriteLine("[windows-foreground] device secret already stored; " +
+                                      "waiting for the iPad to reconnect with it " +
+                                      "(no new pairing code is issued).");
                 }
                 else
                 {
-                    Console.WriteLine("[windows-foreground] device secret already stored; " +
-                                      "waiting for the iPad to reconnect with it.");
+                    Console.WriteLine($"[windows-foreground] one-time pairing code: {pairCode}");
+                    Console.WriteLine("[windows-foreground] waiting for the iPad to authenticate " +
+                                      "with the code above.");
                 }
-                Console.WriteLine("[windows-foreground] waiting for iPad authentication " +
-                                  "(enter the code above in the iPad app, or let it reconnect with its stored secret)...");
 
                 var watcher = new ForegroundWatcher();
                 string lastToken = string.Empty;
