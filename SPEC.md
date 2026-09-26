@@ -364,17 +364,18 @@ actions moves.
   physical verification pending" until the owner runs the §9 checks in both orientations. No
   dictation work is included here (still §8 stage 5 / §13).
 
-## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED; IMPLEMENTED IN SOURCE (CI build and physical acceptance pending)
+## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED; IMPLEMENTED IN `c8babce` (CI build and physical acceptance pending)
 Spec-first contract for the owner-approved optional Windows helper that tells the iPad which
 application is in the foreground so the iPad can present an app-specific CONTROL layout. This is
 the previously non-goaled "Windows companion / WebSocket transport" and "dynamic per-app panels"
 work (§11, §13), now approved and specified. Defined at base `482155b`; no Swift, README or other
-file is changed by this spec commit — the implementation commit must reference this spec SHA.
-The implementation now exists in the working tree (`BTRemote/WindowsForeground.swift`,
-`BTRemote/SettingsView.swift`, `BTRemote/AppSettings.swift`, `companion/`): the §7.2 F
-configurability gap found by the independent review is closed — the executable→layout map and every
+file was changed by that spec commit. The implementation is committed in `c8babce`
+(`feat(windows): configure foreground app layouts [spec fb77782]`): the §7.2 F configurability gap
+found by the independent review is closed — the executable→layout map and every
 layout's labelled actions are one user-editable JSON document instead of hard-coded Swift action
-sets, and the Swift 6 strict-concurrency problem in `AppLayouts` is gone.
+sets, and the Swift 6 strict-concurrency problem in `AppLayouts` is gone. The code being committed
+does not mean it is verified: no CI job has built the Swift client yet and no hardware test has been
+run (§7.2 I, §9 item 10).
 
 Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only input channel.**
 The helper is out-of-band UI signalling only. It reports a foreground-app identity so the iPad knows
@@ -435,13 +436,27 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   4. On every later connection (helper restart, Wi-Fi drop, iPad reboot, or a reconnect after the
      helper lost the previous socket) the iPad authenticates with
      `{"type":"reconnect","secret":"<base64>"}` and the helper replies `{"type":"reconnected"}` — no
-     new code is issued, entered or accepted. The helper verifies the credential against its own
-     expected request with a fixed-time comparison, so the device never has to re-enter a code the
-     helper no longer prints; a device reconnecting on a fresh socket replaces the stale one.
+     new code is issued, entered or accepted. A real 32-byte secret base64-encodes to 44 characters,
+     so that exact frame is 76 bytes; the helper therefore reads one bounded authentication frame of
+     at most `MaxAuthFrameBytes` = 128 bytes (bounded allocation, no unbounded read). The helper
+     verifies the credential against its own expected request with a fixed-time comparison, so the
+     device never has to re-enter a code the helper no longer prints; a device reconnecting on a
+     fresh socket replaces the stale one.
   The endpoint rejects any peer that does not present that credential: a connection that fails TLS,
   the WebSocket handshake, or credential verification is closed without a single byte of payload and
-  leaves any previously authenticated session untouched. Re-pairing from scratch requires restarting
-  the helper (fresh code, and re-pinning if its certificate was regenerated).
+  leaves any previously authenticated session untouched.
+  **Re-pairing recovery (read this before telling the user to restart the helper).** While a valid
+  32-byte secret is persisted on Windows, restarting the helper does NOT issue or print a fresh
+  pairing code: the helper stays in reconnect mode and only accepts the stored secret, so a
+  restarted helper that says "device secret already stored; waiting for the iPad to reconnect with it
+  (no new pairing code is issued)" is behaving correctly. To pair a *different* iPad, the user must
+  tap **"Unpair and forget this helper"** on the iPad (which clears its Keychain secret) AND delete
+  only `%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin` on Windows, then restart the helper;
+  it then prints a fresh one-time code. Keep `%LOCALAPPDATA%\iPadForegroundHelper\tls-cert.pfx` in
+  place so the pinned certificate and its fingerprint survive the re-pair. If that certificate is
+  deliberately removed or regenerated, the helper prints a new SHA-256 fingerprint and it must be
+  re-entered on the iPad. Until the device-secret file has been removed and the helper restarted, a
+  new/unpaired iPad cannot pair at all.
   The iPad keeps the helper-issued 32-byte secret in the **iOS Keychain only** (generic password,
   service `io.github.jqssun.btremote.windows-foreground`, account `device-secret`,
   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`); host, port and fingerprint are ordinary app
@@ -556,12 +571,13 @@ PR #10. The owner's §9 hardware acceptance for it is still outstanding. Stage *
 CONTROL surface** is implemented — contract defined in §7.1 (spec `97d459b`); code in `fd50ae1`
 (`feat(ios): add unified CONTROL workspace`); merged `482155b` via PR #17.
 The next bounded active stage is **5. Windows helper and foreground-aware layouts (§7.2)** — the
-companion app, secure local pairing and per-app/foreground layout contract are defined by this spec
-commit (fb77782) and the implementation is now **present in the working tree** (Windows C# helper +
-iPad `BTRemote/WindowsForeground.swift` + the user-editable JSON layout document from §7.2 F);
-the implementation commit must reference that spec SHA. Nothing in §7.2 may be called verified:
-the C# helper builds and its dependency-free tests pass locally (48 checks), Swift cannot be
-compiled on this Windows machine so the iOS client is unbuilt, and §9 item 10 stays outstanding.
+companion app, secure local pairing and per-app/foreground layout contract are defined by spec
+commit `fb77782` and implemented by commit `c8babce` (`feat(windows): configure foreground app
+layouts [spec fb77782]`): Windows C# helper + iPad `BTRemote/WindowsForeground.swift` + the
+user-editable JSON layout document from §7.2 F. Nothing in §7.2 may be called verified:
+the C# helper builds and its dependency-free tests pass locally (67 checks), Swift cannot be
+compiled on this Windows machine so the iOS client is unbuilt and its CI build is still pending,
+and §9 item 10 stays outstanding.
 Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
 dictation contract is written here.
@@ -689,9 +705,10 @@ can pass it.)
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
   `3a3ddf2`). Physical verification stays pending per §9.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
-- **Windows helper and foreground-aware layouts (§7.2):** implemented in source, **not verified**.
+- **Windows helper and foreground-aware layouts (§7.2):** implemented and committed in `c8babce`,
+  **not verified**.
   The C# helper builds with `dotnet build` and its dependency-free tests pass locally
-  (`ALL TESTS PASSED`, 48 checks). The Swift side (`BTRemote/WindowsForeground.swift`,
+  (`ALL TESTS PASSED`, 67 checks). The Swift side (`BTRemote/WindowsForeground.swift`,
   `BTRemote/KeyboardView.swift`, `BTRemote/AppSettings.swift`, `BTRemote/SettingsView.swift`) has
   never been compiled — there is no Xcode/swift on this machine — so its build must be confirmed by
   the macOS GitHub Actions job and its behaviour by the owner's §9 item 10 hardware session. Do not
@@ -703,7 +720,7 @@ can pass it.)
   `ac87c61` / run `35642707603`, `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`);
   any newer Swift edit is unverified without a new CI run — which includes the §7.2 F work in
   `BTRemote/WindowsForeground.swift` / `KeyboardView.swift` / `AppSettings.swift` /
-  `SettingsView.swift` (uncommitted at the time of writing). The C# companion builds and its tests
+  `SettingsView.swift` (committed in `c8babce`, never built). The C# companion builds and its tests
   pass locally (`dotnet`, .NET 8, no NuGet).
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
@@ -760,8 +777,9 @@ truly needs more.
 (Not active — any of these requires a preceding spec commit per the rule at the top of this file.)
 - Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software") and
   dynamic per-app / foreground-aware layouts — the contract is defined at §7.2 (spec commits
-  `b751488` / `fb77782`); the implementation is present in source but unbuilt and untested, and the
-  implementation commit must reference that spec SHA per the spec-first rule and §7.2 I.
+  `b751488` / `fb77782`) and the implementation is committed in `c8babce`; that implementation is
+  still unverified — the Swift client has never been built and the §9 item 10 hardware checks are
+  outstanding.
 - OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
   BLE-stack implications to be researched), gyro aim (implemented and CI-verified in `1284aca`

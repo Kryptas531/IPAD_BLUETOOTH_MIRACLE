@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using WindowsForeground;
 
@@ -258,6 +260,36 @@ Check("reconnect request json",
     ForegroundServer.ReconnectRequestJson("abc") == "{\"type\":\"reconnect\",\"secret\":\"abc\"}");
 Check("pair and reconnect messages differ",
     ForegroundServer.PairRequestJson("123456") != ForegroundServer.ReconnectRequestJson("123456"));
+
+// --- SPEC §7.2 C: the whole reconnect frame must fit the auth frame the helper
+//     reads. A REAL 32-byte secret base64-encodes to 44 characters, so the
+//     exact reconnect request is 76 bytes; the previous 64-byte cap made the
+//     helper reject its own credential and never reconnect.
+byte[] realSecret = new byte[32];
+RandomNumberGenerator.Fill(realSecret);
+string realSecretBase64 = Convert.ToBase64String(realSecret);
+string realReconnectRequest = ForegroundServer.ReconnectRequestJson(realSecretBase64);
+Check("a real 32-byte secret base64-encodes to exactly 44 characters",
+    realSecret.Length == 32 && realSecretBase64.Length == 44);
+Check("the complete 32-byte-secret reconnect request is the exact 76-byte frame",
+    Encoding.UTF8.GetByteCount(realReconnectRequest) == 76 &&
+    realReconnectRequest == "{\"type\":\"reconnect\",\"secret\":\"" + realSecretBase64 + "\"}");
+Check("the full reconnect frame fits the bounded auth frame the helper reads",
+    Encoding.UTF8.GetByteCount(realReconnectRequest) <= ForegroundServer.MaxAuthFrameBytes);
+Check("the pair frame still fits the original ≤64-byte bound",
+    Encoding.UTF8.GetByteCount(ForegroundServer.PairRequestJson("123456")) <= 64);
+Check("an oversized (129-byte) auth frame is still outside the bound",
+    Encoding.UTF8.GetByteCount(new string('x', ForegroundServer.MaxAuthFrameBytes + 1))
+        > ForegroundServer.MaxAuthFrameBytes);
+// The exact fixed-time credential comparison is unchanged: the server only
+// accepts the byte-for-byte expected request built from its own stored secret.
+Check("the exact expected reconnect request still matches by fixed-time comparison",
+    CryptographicOperations.FixedTimeEquals(
+        Encoding.UTF8.GetBytes(ForegroundServer.ReconnectRequestJson(realSecretBase64)),
+        Encoding.UTF8.GetBytes(realReconnectRequest)) &&
+    !CryptographicOperations.FixedTimeEquals(
+        Encoding.UTF8.GetBytes(ForegroundServer.ReconnectRequestJson(realSecretBase64)),
+        Encoding.UTF8.GetBytes(ForegroundServer.PairRequestJson("123456"))));
 
 // --- the one notification the helper ever sends (now a profile id, not a fixed enum) ---
 Check("json vscode",

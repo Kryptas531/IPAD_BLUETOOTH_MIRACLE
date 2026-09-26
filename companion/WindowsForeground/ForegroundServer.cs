@@ -66,6 +66,15 @@ namespace WindowsForeground
         // RFC 6455 §1.3 magic GUID for the handshake accept hash.
         private const string WsHandshakeGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+        // Largest authentication frame the helper reads (SPEC §7.2 C). The
+        // longest legitimate frame is the reconnect request built from a real
+        // 32-byte secret: {"type":"reconnect","secret":"<44 base64 chars>"} is
+        // exactly 76 bytes, so the old 64-byte cap wrongly rejected it. 128
+        // keeps a bounded read buffer/allocation while accepting that frame;
+        // anything larger cannot be the expected credential anyway, because
+        // the credential check below stays an exact fixed-time comparison.
+        public const int MaxAuthFrameBytes = 128;
+
         private readonly X509Certificate2 _cert;
         private readonly TcpListener _listener;
         private readonly string _secretPath;
@@ -292,7 +301,7 @@ namespace WindowsForeground
                     return false; // code spent and no secret stored; restart the helper to re-pair
                 }
 
-                var receiveBuffer = new byte[256];
+                var receiveBuffer = new byte[MaxAuthFrameBytes];
                 var received = new StringBuilder();
                 using var pairTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 pairTimeout.CancelAfter(TimeSpan.FromSeconds(5));
@@ -305,7 +314,7 @@ namespace WindowsForeground
                         return false; // no pairing — send nothing, wait for next device
                     }
                     received.Append(Encoding.UTF8.GetString(receiveBuffer, 0, result.Count));
-                    if (received.Length > 64)
+                    if (received.Length > MaxAuthFrameBytes)
                     {
                         return false; // oversized/unexpected frame
                     }

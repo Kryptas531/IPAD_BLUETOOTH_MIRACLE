@@ -43,16 +43,17 @@ validation, and the exact pair/reconnect/notification wire strings.
   `TLS certificate SHA-256 fingerprint (pin this on the iPad): ...`
   stays valid across restarts. If that file is deleted or unreadable, a new
   certificate is generated and the iPad must re-pin.
-* **Pairing.** At start the helper prints a one-time six-digit code. The device
-  must send exactly `{"type":"pair","code":"<code>"}`. A correct exchange
-  consumes the code and the server then generates a 256-bit device secret,
-  persists it DPAPI-protected at
-  `%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin`, and sends it to the
-  device exactly once, over TLS, as `{"type":"paired","secret":"<base64>"}`.
+* **Pairing (only when no secret is stored yet).** At start the helper prints a one-time six-digit
+  code **only if no valid 32-byte secret is stored**. The device must then send exactly
+  `{"type":"pair","code":"<code>"}`. A correct exchange
+  consumes the code and the server then generates a 256-bit device secret, persists it DPAPI-protected at
+  `%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin`, and sends it to the device exactly once, over TLS, as `{"type":"paired","secret":"<base64>"}`.
+  That secret is the 32-byte secret encoded as 44 base64 characters, so the later auth frame is 76
+  bytes and is read inside the helper's bounded 128-byte (`MaxAuthFrameBytes`) authentication frame.
 * **Reconnect.** A device that loses the link (Wi-Fi drop, iPad reboot, helper
   restart) reconnects with `{"type":"reconnect","secret":"<base64>"}` and is
   authenticated by a fixed-time comparison against the stored secret; no new
-  pairing code is needed. Server-side client authentication is therefore
+  pairing code is needed or printed. Server-side client authentication is therefore
   verified (possession of the one-time code, then of the durable secret), not
   assumed.
 * **Application tracking is data-driven.** `ForegroundWatcher` polls the
@@ -113,9 +114,20 @@ back to the shipped defaults.
 * **At-rest protection scope.** DPAPI protects the persisted certificate and
   device secret against other Windows users, not against the same user account
   (and therefore not against malware running as that user).
-* **Durable pairing is one-device-per-helper.** Once the code is spent and the
-  secret stored, a *different* iPad cannot pair without restarting the helper
-  to get a fresh code.
+* **Durable pairing is one-device-per-helper, and restarting is not enough to
+  re-pair.** Once the code is spent and the 32-byte secret is stored, restarting
+  the helper does NOT give you a fresh code: the helper keeps the stored secret
+  and stays in reconnect mode (it prints "device secret already stored; waiting
+  for the iPad to reconnect with it (no new pairing code is issued)"). To pair a
+  *different* iPad, tap **"Unpair and forget this helper"** on the iPad AND
+  delete only
+  `%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin`
+  on Windows, then restart the helper; it then prints a fresh one-time code.
+  Keep `%LOCALAPPDATA%\iPadForegroundHelper\tls-cert.pfx` in place so the
+  pinned fingerprint survives. If that certificate is deliberately removed or
+  regenerated, the helper prints a new SHA-256 fingerprint and it must be
+  re-entered on the iPad. Until the device-secret file is removed and the helper
+  restarted, a new/unpaired iPad cannot pair at all.
 * **True mutual TLS is not implemented.** Reconnection proves possession of the
   shared secret; the server does not issue/verify a client X.509 identity.
   Doing that properly needs an issued client certificate held in the iPad
