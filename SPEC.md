@@ -70,8 +70,8 @@ right)`, `move(dx:dy:)`, `scroll(wheel)`, `keyReports(for:modifiers:)`; ASCII→
 reading the script) and `BTRemote/Info.plist`/`entitlements.plist` (contents not read in prior
 sessions — ci-worker zone). The only exceptions any spec commit may grant are: adding
 `NSMotionUsageDescription` to `BTRemote/Info.plist` (§5.1 J), and adding
-`NSLocalNetworkUsageDescription` to `BTRemote/Info.plist` with exactly the text `BTRemote connects
-to your paired Windows PC on the local network to show app-specific controls.` (§7.2). No other
+`NSLocalNetworkUsageDescription` to `BTRemote/Info.plist` with exactly the text
+`BTRemote connects to your paired Windows PC on the local network to show app-specific controls.` (§7.2). No other
 key may be added there and everything else in those two files stays untouched.
 
 ## 5. IMPLEMENTED and CONTRACT-DEFINED behavior
@@ -553,6 +553,11 @@ can pass it.)
   input path must still behave exactly as in items 4–7 — mouse move/tap/scroll, keyboard typing and
   Direct Input — confirming the helper never carries, sends or overrides HID input and never
   re-negotiates BLE/HOGP pairing.
+  (e) **Local-network permission:** verify the iOS local-network permission
+  prompt (`NSLocalNetworkUsageDescription`, §4) appears only on the first helper pairing/connect and
+  never at app launch and never on the plain §7.1 path; verify that denying it leaves the generic
+  §7.1 CONTROL layout and all BLE HID pairing and existing input paths (items 4–7 / §5) completely
+  unaffected.
 - Ready = all mandatory items (former MVP table 1–14) plus items 9–10 work AND lock-screen
   acceptance passes.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
