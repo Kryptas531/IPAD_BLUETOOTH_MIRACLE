@@ -2,7 +2,8 @@
 
 .NET 8 console helper that tells the paired iPad which Windows application is
 in the foreground, so the iPad can switch to the matching CONTROL layout
-(SPEC §7.1/§7.2; spec commits `b751488` and `fb77782`). It is the Windows side of
+(SPEC §7.1/§7.2; spec commits `b751488` and `fb77782`; the `--bind-ip` option
+follows spec commit `3eb6a85`). It is the Windows side of
 the iPad → BLE HID → Windows controller project; it never sends HID input itself.
 
 ## Build and run
@@ -11,24 +12,39 @@ the iPad → BLE HID → Windows controller project; it never sends HID input it
 cd 'C:\LIFE\IPAD BLTH'
 dotnet build companion\WindowsForeground\WindowsForeground.csproj -c Release
 dotnet run --project companion\WindowsForeground\WindowsForeground.csproj -c Release   # optional [port], default 8443
+dotnet run --project companion\WindowsForeground\WindowsForeground.csproj -c Release -- --bind-ip 192.168.1.25
 dotnet run --project companion\WindowsForeground.Tests\WindowsForeground.Tests.csproj -c Release
 ```
+
+The last `dotnet run` line is for a computer with several network interfaces
+(Wi-Fi + Ethernet/VPN): `--bind-ip` names the exact IPv4 address of the Wi-Fi
+adapter the iPad is on, so the helper binds that one address and nothing else.
+Then enter the same address as **Windows helper → Host** on the iPad, e.g.
+`192.168.1.25` (with the port you used, default `8443`). `--bind-ip` is
+fail-closed: an invalid, public, IPv6, wildcard or not-currently-assigned
+address stops the helper at startup with an explanatory message; it never
+silently binds a different address. Without `--bind-ip` the behaviour is exactly
+as before (first eligible local/private IPv4, port 8443).
 
 No NuGet packages: only the .NET 8 base class library (`System.Net`,
 `System.Net.WebSockets`, `System.Security.Cryptography`, `System.Text.Json`)
 plus two `crypt32` P/Invoke entry points. Tests are dependency-free
 (`ALL TESTS PASSED`, exit 0); they cover parsing the shipped layout document,
 executable → layout-token resolution, chord / chord-sequence / typed-text target
-validation, and the exact pair/reconnect/notification wire strings.
+validation, the exact pair/reconnect/notification wire strings, and the
+`--bind-ip` / port command-line rules.
 
 ## Actual behavior (what the code really does today)
 
-* **Local-only bind.** The helper never binds a wildcard address. It walks the
-  operational, non-tunnel network interfaces and binds the *first* IPv4
-  unicast address that is loopback or RFC 1918 / link-local
+* **Local-only bind.** The helper never binds a wildcard address. By default it
+  walks the operational, non-tunnel network interfaces and binds the *first*
+  IPv4 unicast address that is loopback or RFC 1918 / link-local
   (`ForegroundServer.IsLocalPrivateAddress`). If the machine has no such
   address, the helper prints a message and exits with code 1 rather than
-  listening on a public interface.
+  listening on a public interface. With `--bind-ip <IPv4>` it binds exactly the
+  named address, and only after checking that it is a valid IPv4 private/local
+  address actually assigned to an operational non-tunnel interface; otherwise it
+  prints the reason and exits with code 1 (no fallback address).
 * **TLS is mandatory.** The listener wraps every accepted socket in
   `SslStream` and only then performs the RFC 6455 WebSocket handshake (the
   helper implements the server-side handshake itself because .NET ships only a
@@ -132,6 +148,8 @@ back to the shipped defaults.
   shared secret; the server does not issue/verify a client X.509 identity.
   Doing that properly needs an issued client certificate held in the iPad
   keychain/Secure Enclave, which is outside this bounded step.
-* **Single-homed bind.** Only the first private IPv4 address is used; on a
-  multi-homed Windows host the reachable address must be that one, or the port
-  argument must be changed.
+* **Single-homed bind.** Only one address is ever bound: the first eligible
+  private IPv4, or the one address named with `--bind-ip`. On a multi-homed
+  Windows host the user must either make sure the reachable address is that one
+  or start the helper with `--bind-ip <that address>` (and the same port, and
+  the matching Host on the iPad).

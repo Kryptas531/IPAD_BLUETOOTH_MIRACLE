@@ -1,5 +1,6 @@
 // Entry point for the Windows 10/11 companion helper (SPEC §7.2, spec
-// commit b751488; the §7.2 F configurability fix). Three parts:
+// commit b751488; the §7.2 F configurability fix; the §7.2 B optional
+// --bind-ip address, spec commit 3eb6a85). Three parts:
 //
 //   * ForegroundMapping — pure user-configurable layout document (executable →
 //     layout token, chord / sequence / text targets), unit tested,
@@ -23,7 +24,6 @@
 using System;
 using System.IO;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
@@ -33,7 +33,6 @@ namespace WindowsForeground
 {
     public static class Program
     {
-        private const int DefaultPort = 8443;
         private const int PollMilliseconds = 350;
 
         private static async Task<int> Main(string[] args)
@@ -46,23 +45,25 @@ namespace WindowsForeground
 
             try
             {
-                int port = DefaultPort;
-                if (args.Length > 0)
+                // SPEC §7.2 B (spec commit 3eb6a85): the port stays the optional
+                // positional argument (default 8443); `--bind-ip <IPv4>` optionally
+                // names the address to bind on a multihomed host.
+                if (!ForegroundServer.TryParseLaunchArguments(args, out int port, out string? bindIp,
+                                                              out string argumentError))
                 {
-                    if (!int.TryParse(args[0], out port) || port < 1 || port > 65535)
-                    {
-                        Console.Error.WriteLine($"usage: WindowsForeground [port]   (default {DefaultPort})");
-                        return 1;
-                    }
+                    Console.Error.WriteLine($"usage: WindowsForeground [--bind-ip <IPv4>] [port]" +
+                                            $"   (default {ForegroundServer.DefaultPort})");
+                    Console.Error.WriteLine($"[windows-foreground] {argumentError}");
+                    return 1;
                 }
 
                 // §7.2: the endpoint must be local-only. Never bind a wildcard
-                // address; bind one concrete private/local IPv4 interface.
-                if (TrySelectLocalEndPoint(port) is not IPEndPoint endpoint)
+                // address; bind one concrete private/local IPv4 interface (the
+                // requested one when --bind-ip was given, never a fallback).
+                if (!ForegroundServer.TryResolveEndPoint(bindIp, port, out IPEndPoint? endpoint,
+                                                         out string endpointError))
                 {
-                    Console.Error.WriteLine(
-                        "[windows-foreground] no private/local IPv4 interface found (RFC 1918 or loopback); " +
-                        "refusing to start rather than exposing the helper on a public interface.");
+                    Console.Error.WriteLine($"[windows-foreground] {endpointError}");
                     return 1;
                 }
 
@@ -105,7 +106,8 @@ namespace WindowsForeground
                 var server = new ForegroundServer(cert, endpoint, pairCode, secretPath);
                 _ = server.AcceptLoopAsync(CancellationToken.None);
 
-                Console.WriteLine($"[windows-foreground] listening on {endpoint}");
+                Console.WriteLine($"[windows-foreground] listening on {endpoint}"
+                                  + (string.IsNullOrWhiteSpace(bindIp) ? "" : $" (explicitly requested via {ForegroundServer.BindIpOption})"));
                 Console.WriteLine("[windows-foreground] TLS certificate SHA-256 fingerprint " +
                                   $"(pin this on the iPad): {cert.GetCertHashString(HashAlgorithmName.SHA256)}");
                 byte[]? storedSecret = ForegroundServer.ProtectedStore.TryRead(secretPath);
@@ -167,30 +169,6 @@ namespace WindowsForeground
                 Console.Error.WriteLine($"[windows-foreground] fatal: {ex.GetType().Name}: {ex.Message}");
                 return 1;
             }
-        }
-
-        // Picks the first operational, non-tunnel interface that owns a
-        // private/local IPv4 unicast address. Returns null when there is none
-        // (the helper then refuses to start instead of listening on a public
-        // or wildcard address).
-        private static IPEndPoint? TrySelectLocalEndPoint(int port)
-        {
-            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (nic.OperationalStatus != OperationalStatus.Up ||
-                    nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
-                {
-                    continue;
-                }
-                foreach (UnicastIPAddressInformation unicast in nic.GetIPProperties().UnicastAddresses)
-                {
-                    if (ForegroundServer.IsLocalPrivateAddress(unicast.Address))
-                    {
-                        return new IPEndPoint(unicast.Address, port);
-                    }
-                }
-            }
-            return null;
         }
 
         // Reuses the previously generated TLS key pair so the iPad can pin one

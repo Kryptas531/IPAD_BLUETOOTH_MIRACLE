@@ -1,12 +1,14 @@
 // Focused pure tests for the user-configurable layout document, the executable →
-// layout-token resolution, the safe profile-id grammar and the target validation of
-// SPEC §7.2 D/F (spec commit b751488 plus the §7.2 F configurability fix). Dependency-free: no NuGet test
-// framework; exit code 0 = all passed, 1 = failures listed.
+// layout-token resolution, the safe profile-id grammar, the target validation of
+// SPEC §7.2 D/F (spec commit b751488 plus the §7.2 F configurability fix) and the
+// §7.2 B command line / bind-address rules (spec commit 3eb6a85). Dependency-free: no
+// NuGet test framework; exit code 0 = all passed, 1 = failures listed.
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -307,6 +309,81 @@ Check("loopback address is local", ForegroundServer.IsLocalPrivateAddress(IPAddr
 Check("public address is NOT accepted", !ForegroundServer.IsLocalPrivateAddress(IPAddress.Parse("8.8.8.8")));
 Check("wildcard address is NOT accepted", !ForegroundServer.IsLocalPrivateAddress(IPAddress.Any));
 Check("IPv6 address is NOT accepted", !ForegroundServer.IsLocalPrivateAddress(IPAddress.Parse("::1")));
+
+// --- SPEC §7.2 B, spec commit 3eb6a85: `WindowsForeground [--bind-ip <IPv4>] [port]` ---
+// Argument parsing is pure, so it is exercised without a network or an adapter.
+Check("no arguments keeps the default port and automatic interface selection",
+    ForegroundServer.TryParseLaunchArguments(Array.Empty<string>(), out int defaultPort,
+        out string? noBind, out string noError) &&
+    defaultPort == 8443 && noBind == null && noError == string.Empty);
+Check("the existing optional positional port still works",
+    ForegroundServer.TryParseLaunchArguments(new[] { "9100" }, out int portOnly, out string? portBind, out _) &&
+    portOnly == 9100 && portBind == null);
+Check("an invalid positional port is still rejected",
+    !ForegroundServer.TryParseLaunchArguments(new[] { "not-a-port" }, out _, out _, out _) &&
+    !ForegroundServer.TryParseLaunchArguments(new[] { "0" }, out _, out _, out _) &&
+    !ForegroundServer.TryParseLaunchArguments(new[] { "70000" }, out _, out _, out _));
+Check("--bind-ip <IPv4> is accepted and keeps the default port",
+    ForegroundServer.TryParseLaunchArguments(new[] { "--bind-ip", "192.168.1.25" }, out int bindPort,
+        out string? bindIp, out string bindError) &&
+    bindIp == "192.168.1.25" && bindPort == 8443 && bindError == string.Empty);
+Check("--bind-ip and the positional port can be combined",
+    ForegroundServer.TryParseLaunchArguments(new[] { "--bind-ip", "192.168.1.25", "9100" },
+        out int bothPort, out string? bothIp, out _) && bothIp == "192.168.1.25" && bothPort == 9100);
+Check("--bind-ip without a value is a startup error",
+    !ForegroundServer.TryParseLaunchArguments(new[] { "--bind-ip" }, out _, out _, out string missingValue) &&
+    missingValue.Contains("--bind-ip") && missingValue.Contains("IPv4"));
+Check("an unknown option is a startup error",
+    !ForegroundServer.TryParseLaunchArguments(new[] { "--bind-ipx", "192.168.1.25" }, out _, out _, out _));
+
+// The explicit address is validated exactly as specified: valid IPv4, not a
+// wildcard, private/local, AND owned by an operational non-tunnel interface.
+bool publicOk = ForegroundServer.TryResolveEndPoint("8.8.8.8", 8443, out IPEndPoint? publicEp, out string publicError);
+Check("a public address is refused (no bind, clear error, no fallback)",
+    !publicOk && publicEp == null && publicError.Contains("not a private/local IPv4"));
+bool wildcardOk = ForegroundServer.TryResolveEndPoint("0.0.0.0", 8443, out IPEndPoint? wildcardEp, out string wildcardError);
+Check("a wildcard address is refused",
+    !wildcardOk && wildcardEp == null && wildcardError.Contains("wildcard address"));
+bool ipv6Ok = ForegroundServer.TryResolveEndPoint("::1", 8443, out IPEndPoint? ipv6Ep, out string ipv6Error);
+Check("an IPv6 address is refused as not a valid IPv4",
+    !ipv6Ok && ipv6Ep == null && ipv6Error.Contains("not a valid IPv4"));
+bool garbageOk = ForegroundServer.TryResolveEndPoint("not-an-address", 8443, out IPEndPoint? garbageEp, out string garbageError);
+Check("a malformed address is refused",
+    !garbageOk && garbageEp == null && garbageError.Contains("not a valid IPv4"));
+bool partialOk = ForegroundServer.TryResolveEndPoint("192.168.1", 8443, out IPEndPoint? partialEp, out string partialError);
+Check("an incomplete dotted-quad address is refused",
+    !partialOk && partialEp == null && partialError.Length > 0);
+bool unassignedOk = ForegroundServer.TryResolveEndPoint("10.42.42.42", 8443, out IPEndPoint? unassignedEp, out string unassignedError);
+Check("a private address not owned by an operational non-tunnel interface is refused",
+    !unassignedOk && unassignedEp == null && unassignedError.Contains("not assigned"));
+
+// The automatic path is unchanged: whatever it picked before is still accepted,
+// and asking for that same address explicitly yields the same endpoint/port.
+bool autoOk = ForegroundServer.TryResolveEndPoint(null, 8443, out IPEndPoint? autoEp, out string autoError);
+if (autoOk && autoEp != null)
+{
+    bool explicitOk = ForegroundServer.TryResolveEndPoint(autoEp.Address.ToString(), 9100,
+                                                          out IPEndPoint? explicitEp, out string explicitError);
+    Check("an address owned by an operational non-tunnel interface is accepted as --bind-ip",
+        explicitOk && explicitEp != null && explicitEp.Address.Equals(autoEp.Address) && explicitError == string.Empty);
+    Check("an explicit --bind-ip address can carry its own port",
+        explicitOk && explicitEp != null && explicitEp.Port == 9100);
+    Check("automatic selection still uses the requested port",
+        autoEp.Port == 8443 && ForegroundServer.IsLocalPrivateAddress(autoEp.Address));
+}
+else
+{
+    // No private/local adapter on this machine: the helper must refuse to start
+    // with the original message, never fall back to a public or wildcard bind.
+    Check("automatic selection refuses to start when no private/local IPv4 exists",
+        !autoOk && autoEp == null && autoError.Contains("no private/local IPv4 interface found"));
+}
+
+// A valid private/local address the host does own (loopback always qualifies).
+bool loopbackOk = ForegroundServer.TryResolveEndPoint("127.0.0.1", 8443, out IPEndPoint? loopbackEp, out string loopbackError);
+Check("a valid private/local address owned by this host binds exactly it",
+    loopbackOk && loopbackEp != null &&
+    loopbackEp.Address.Equals(IPAddress.Loopback) && loopbackEp.Port == 8443 && loopbackError == string.Empty);
 
 // --- auth mode selection (which credential the next client must present) ---
 // No stored secret at all (fresh helper) => the device must use the printed
