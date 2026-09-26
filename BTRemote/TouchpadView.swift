@@ -11,6 +11,9 @@
         var scrollSensitivity: CGFloat
         var mode: PadMode = .trackpad
         var metrics: PerformanceMetrics?
+        /// `false` disables touch movement only; single-finger tap-to-LMB still works
+        /// (SPEC §5.1 B — used while the GAME input source is Gyro).
+        var touchMovementEnabled: Bool = true
         var onMove: (Int8, Int8) -> Void
         var onScroll: (Int8) -> Void
         var onLeftClick: () -> Void
@@ -29,7 +32,8 @@
                     metrics: metrics,
                     onMove: onMove,
                     onTap: onLeftClick,
-                    moveSensitivity: moveSensitivity
+                    moveSensitivity: moveSensitivity,
+                    movementEnabled: touchMovementEnabled
                 )
             }
             let view = UIView()
@@ -72,6 +76,7 @@
                 gameView.onMove = onMove
                 gameView.onTap = onLeftClick
                 gameView.moveSensitivity = moveSensitivity
+                gameView.movementEnabled = touchMovementEnabled
                 return
             }
             let c = context.coordinator
@@ -181,6 +186,9 @@
         var onMove: (Int8, Int8) -> Void
         var onTap: () -> Void
         var moveSensitivity: CGFloat = 1
+        /// `false` while the GAME input source is Gyro: touch movement is not sent,
+        /// but tap-to-LMB keeps working (SPEC §5.1 B).
+        var movementEnabled: Bool = true
 
         private var previousLocations: [ObjectIdentifier: CGPoint] = [:]
         private var beganLocations: [ObjectIdentifier: CGPoint] = [:]
@@ -190,12 +198,14 @@
             metrics: PerformanceMetrics?,
             onMove: @escaping (Int8, Int8) -> Void,
             onTap: @escaping () -> Void,
-            moveSensitivity: CGFloat = 1
+            moveSensitivity: CGFloat = 1,
+            movementEnabled: Bool = true
         ) {
             self.metrics = metrics
             self.onMove = onMove
             self.onTap = onTap
             self.moveSensitivity = moveSensitivity
+            self.movementEnabled = movementEnabled
             super.init(frame: .zero)
             isMultipleTouchEnabled = true
             backgroundColor = .clear
@@ -262,6 +272,7 @@
         }
 
         private func send(delta: CGPoint) {
+            guard movementEnabled else { return }
             var x = delta.x * moveSensitivity
             var y = delta.y * moveSensitivity
             while abs(x) > 127 || abs(y) > 127 {

@@ -19,8 +19,14 @@ struct KeyboardView: View {
     @AppStorage(AppSettings.liveTypingKey) private var liveTyping = true
     @AppStorage(AppSettings.padModeKey) private var padMode = PadMode.trackpad
     @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
+    @AppStorage(AppSettings.gameInputModeKey) private var gameInputMode = GameInputMode.touch
+    @AppStorage(AppSettings.gyroSensitivityKey) private var gyroSensitivity = AppSettings.defaultGyroSensitivity
     @EnvironmentObject private var directInput: DirectInputController
     @EnvironmentObject private var lowEnergy: HIDPeripheral
+    #if os(iOS)
+        @StateObject private var gyro = GyroAimController()
+        @Environment(\.scenePhase) private var scenePhase
+    #endif
     @State private var text = ""
     @State private var sent = ""
     @State private var resetting = false
@@ -45,7 +51,10 @@ struct KeyboardView: View {
             if geo.size.width > geo.size.height {
             if padMode == .game {
                 ZStack(alignment: .top) {
-                    TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics)
+                    TrackpadPanel(
+                        hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics,
+                        touchMovementEnabled: gameInputMode != .gyro
+                    )
                     if gameChromeVisible {
                         VStack(spacing: 4) {
                             controlBar
@@ -60,6 +69,32 @@ struct KeyboardView: View {
                                 }
                                 .fixedSize()
                             }
+                            #if os(iOS)
+                                HStack(spacing: 6) {
+                                    // SPEC §5.1 I: GAME input source, gyro sensitivity, recenter.
+                                    Picker(L10n.Input.source, selection: $gameInputMode) {
+                                        Text(L10n.Input.touch).tag(GameInputMode.touch)
+                                        Text(L10n.Input.gyro).tag(GameInputMode.gyro)
+                                        Text(L10n.Input.hybrid).tag(GameInputMode.hybrid)
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .labelsHidden()
+                                    .frame(maxWidth: 200)
+                                    Text(L10n.Settings.gyroSensitivity).font(.caption2)
+                                    Slider(value: $gyroSensitivity, in: AppSettings.gyroSensitivityRange)
+                                        .frame(maxWidth: 180)
+                                    Button(L10n.Action.recenter) {
+                                        Haptics.tap()
+                                        gyro.recenter()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    if gameInputMode != .touch, !gyro.isAvailable {
+                                        Text(L10n.Input.motionUnavailable)
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                            #endif
                             if showKeyboard {
                                 inputField
                                 keyPanel
@@ -102,7 +137,8 @@ struct KeyboardView: View {
                     controlBar
                     inputField
                     keyPanel
-                    TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics).frame(maxHeight: .infinity)
+                    TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics)
+                        .frame(maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -111,17 +147,50 @@ struct KeyboardView: View {
         .onChange(of: liveTyping) { _ in clear() }
         .task(id: padMode) {
             gameChromeVisible = true
+            #if os(iOS)
+                configureGyro()
+            #endif
             guard padMode == .game else { return }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             if !Task.isCancelled { gameChromeVisible = false }
         }
         #if os(iOS)
+            .onChange(of: gameInputMode) { _ in configureGyro() }
+            .onChange(of: gyroSensitivity) { _ in applyGyroSensitivity() }
+            // SPEC §5.1 G: becoming active again re-baselines the motion source.
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { configureGyro() }
+            }
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) { accessoryBar }
             }
         #endif
     }
+
+    #if os(iOS)
+        /// Apply the slider value to the running source only. Changing sensitivity must
+        /// not restart CoreMotion or clear the attitude baseline, otherwise moving the
+        /// slider re-baselines the gyro mid-use and loses deltas (SPEC §5.1 C/G).
+        @MainActor private func applyGyroSensitivity() {
+            gyro.sensitivity = gyroSensitivity
+        }
+
+        /// Wire the gyro source to the existing relative-mouse report path and start or stop
+        /// it according to the selected GAME input source (SPEC §5.1 B/G).
+        @MainActor private func configureGyro() {
+            gyro.sensitivity = gyroSensitivity
+            guard padMode == .game else {
+                gyro.stop()
+                return
+            }
+            if gameInputMode == .touch {
+                gyro.stop()
+            } else {
+                gyro.start(hid)
+            }
+        }
+    #endif
 
     // Compact row: input-surface mode switcher + Direct Input release + connection status.
     private var controlBar: some View {

@@ -12,6 +12,8 @@ enum AppSettings {
     static let remoteModeKey = "BTRemote.remoteMode"
     static let advertisedNameKey = "BTRemote.advertisedName"
     static let padModeKey = "BTRemote.padMode"
+    static let gameInputModeKey = "BTRemote.gameInputMode"
+    static let gyroSensitivityKey = "BTRemote.gyroSensitivity"
     /// Direct Input release chord, stored as raw values (see ReleaseChord in DirectInputController).
     static let releaseChordKeyKey = "BTRemote.releaseChordKey"
     static let releaseChordModifiersKey = "BTRemote.releaseChordModifiers"
@@ -25,4 +27,7 @@ enum AppSettings {
     static let pointerSensitivityRange = 0.5 ... 10.0
     static let defaultScrollSensitivity = 1.0
     static let scrollSensitivityRange = 0.5 ... 3.0
+    /// Gyro sensitivity: HID mouse counts per radian of device rotation (SPEC §5.1 C).
+    static let defaultGyroSensitivity = 180.0
+    static let gyroSensitivityRange = 20.0 ... 600.0
 }

@@ -4,6 +4,9 @@ struct TrackpadPanel: View {
     let hid: HIDInput
     var mode: PadMode = .trackpad
     var metrics: PerformanceMetrics?
+    /// `false` while the GAME input source is Gyro: touch movement is not sent
+    /// (SPEC §5.1). Touch sensitivity and tap-to-LMB stay untouched otherwise.
+    var touchMovementEnabled: Bool = true
 
     @AppStorage(AppSettings.touchpadSensitivityKey) private var touchpadSensitivity = AppSettings.defaultPointerSensitivity
     @AppStorage(AppSettings.scrollSensitivityKey) private var scrollSensitivity = AppSettings.defaultScrollSensitivity
@@ -45,6 +48,7 @@ struct TrackpadPanel: View {
                         scrollSensitivity: scrollSensitivity,
                         mode: mode,
                         metrics: metrics,
+                        touchMovementEnabled: touchMovementEnabled,
                         onMove: { hid.move(dx: $0, dy: $1) },
                         onScroll: { hid.scroll($0) },
                         onLeftClick: { Haptics.tap(); hid.click(.left) },

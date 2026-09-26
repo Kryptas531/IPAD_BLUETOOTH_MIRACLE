@@ -187,6 +187,10 @@ enum L10n {
             "action.done"
         }
 
+        static var recenter: LocalizedStringKey {
+            "action.recenter"
+        }
+
         static var settings: LocalizedStringKey {
             "action.settings"
         }
@@ -407,6 +411,22 @@ extension L10n {
 
         static var inDevelopment: LocalizedStringKey {
             "input.in_development"
+        }
+
+        static var source: LocalizedStringKey {
+            "input.source"
+        }
+
+        static var gyro: LocalizedStringKey {
+            "input.gyro"
+        }
+
+        static var hybrid: LocalizedStringKey {
+            "input.hybrid"
+        }
+
+        static var motionUnavailable: LocalizedStringKey {
+            "input.motion_unavailable"
         }
 
         static var btShort: LocalizedStringKey {

@@ -34,6 +34,18 @@ no parallel roadmap/architecture/P2/layout docs.
 - Do not maintain many specialist agent profiles — keep only `.qwen/agents/reviewer.md` unless a
   future task truly needs more.
 
+## Pi orchestration exception
+
+For Pi-based autonomous development runs:
+
+- The root/main Pi session may use `openai-codex/gpt-6-luna` as the orchestrator.
+- Routine implementation and review must use the project Pi agents:
+  - `qwen-builder` → corporate Qwen
+  - `qwen-reviewer` → corporate Qwen
+- The Luna orchestrator delegates implementation/review and should not act as the routine code writer.
+- External CLI subagents such as `claude-code`, `codex-exec`, and `cursor-agent` remain prohibited.
+- Qwen Code-specific rules in `QWEN.md` continue to apply when Qwen Code itself is used.
+
 ## Git workflow
 1. fetch + preflight (never assume local `main == origin/main`; if diverged → STOP and report) →
 2. branch from verified `origin/main` → 3. if contract/scope changes: SPEC commit first →

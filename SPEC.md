@@ -67,11 +67,13 @@ right)`, `move(dx:dy:)`, `scroll(wheel)`, `keyReports(for:modifiers:)`; ASCII→
 — plus `BTRemote/Resources/*.json` (not in git; downloaded during CI by
 `ci_scripts/ci_post_clone.sh` from `NordicSemiconductor/bluetooth-numbers-database`, verified by
 reading the script) and `BTRemote/Info.plist`/`entitlements.plist` (contents not read in prior
-sessions — ci-worker zone).
+sessions — ci-worker zone). The only exception any spec commit may grant is defined in §5.1 J:
+adding `NSMotionUsageDescription` to `BTRemote/Info.plist`; everything else there stays untouched.
 
-## 5. IMPLEMENTED behavior
-(Code exists in current main as of code HEAD `0bccedc`; Swift compilation was never possible
-locally — Windows without Xcode/swift — so build verification = CI only, see §12.)
+## 5. IMPLEMENTED and CONTRACT-DEFINED behavior
+(§5.1 is a contract only, not implemented. Except for §5.1, code exists in current main as of
+code HEAD `dbe36ab`; Swift compilation was never possible locally — Windows without
+Xcode/swift — so build verification = CI only, see §12.)
 - **BLE pairing:** iPad auto-advertises HID on launch; Windows pairs it as a standard BT
   keyboard+mouse; connection state visible in app (`SetupView`/`NotConnectedView`).
   IMPLEMENTED + MEASURED (user confirmed basic path finger→BLE→Windows + typing on hardware).
@@ -144,6 +146,52 @@ locally — Windows without Xcode/swift — so build verification = CI only, see
 - **Modes UI:** compact switcher GAME | TRACKPAD | TOUCH | DECK + compact status ("BT ● KB ●").
   TOUCH = **EXPERIMENTAL / in development** (absolute digitizer not implemented). IMPLEMENTED.
 
+### 5.1 CONTRACT DEFINED — not implemented (next roadmap stage: GAME gyro aim)
+No Swift code exists for this yet; this subsection only defines the behavior the next
+implementation commit must follow (spec-first rule at the top of this file).
+- **A. Scope:** GAME mode only. Touch remains the default GAME input and its current behavior
+  (see "GAME high-fidelity input" above) must stay unchanged. TRACKPAD, TOUCH and DECK are not
+  affected.
+- **B. Gyro:** map device-attitude increments (the delta from the previously used attitude) to
+  cursor movement — relative HID mouse `dx`/`dy` sent through the existing relative-mouse report
+  path. No new HID report type, no absolute digitizer. When the mode is Gyro, touch movement is
+  disabled, but the existing GAME single-finger tap-to-LMB must keep working exactly as it does
+  today (`HighFidelityTouchView.finish(_:)` fires `onTap`, which is `HIDInput.click(.left)`).
+  No two-finger-tap-to-RMB handler exists on the GAME path, and this contract does not require,
+  claim or introduce any right-click behavior.
+- **C. Sensitivity:** gyro sensitivity is HID mouse counts per radian of device rotation;
+  default **180**, adjustable range **20–600**. Touch sensitivity keeps its existing meaning
+  and default.
+- **D. Hybrid:** touch and gyro are computed independently. Each source's deltas are scaled by
+  its own sensitivity (touch by the existing touch sensitivity, gyro by the gyro sensitivity) and
+  are delivered through the existing relative-mouse report path as they arrive — there is no
+  shared cycle and neither source waits for the other. The resulting cursor displacement is
+  simply the vector sum of both streams over time. Neither source cancels or replaces the other,
+  and existing touch behavior (movement and single-finger tap-to-LMB) stays intact. No cadence
+  synchronization, smoothing, filtering, interpolation or any other artificial processing is
+  allowed between the two sources.
+- **E. Axis mapping (landscape, screen-relative):** horizontal rotation maps to positive (right)
+  `dx`; vertical rotation maps to positive (down) `dy`.
+- **F. Recenter:** set the previous-attitude baseline to the current attitude; recentering itself
+  emits no movement.
+- **G. Activation / resume:** on gyro activation, and when the app returns to GAME or becomes
+  active again, the current attitude becomes the baseline — stale deltas are never replayed.
+- **H. Motion unavailable:** produce no gyro delta, show an "unavailable" status in the temporary
+  GAME chrome, and keep touch movement active in Hybrid.
+- **I. Controls:** mode (Touch / Gyro / Hybrid), sensitivity, gyro sensitivity and recenter are
+  exposed only in the temporary GAME chrome (§7); no permanent panels, no new telemetry.
+- **J. Boundaries:** do not change Direct Input, and do not change the protected BLE/HID boundary
+  (§4) — gyro output reuses the existing relative mouse report path. The single permitted
+  protected-file exception is adding **only** `NSMotionUsageDescription` to `BTRemote/Info.plist`
+  with exactly the text `BTRemote uses device motion to control the mouse in GAME mode.`
+  (technically required for CoreMotion device attitude; the key is absent as of `dbe36ab`).
+  That key requires focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
+  `BTRemote/Classic/`, `BTRemote/HIDInput.swift` and `BTRemote/HIDReports.swift` stay untouched.
+- **K. No artificial smoothing, filtering or latency** may be added to the input pipeline.
+- **L. Verification:** implementation may claim CI only. Do not claim gyro aim works until the
+  owner has run the §9 hardware acceptance including GAME gyro; until then it stays
+  "implemented, physical verification pending".
+
 ## 6. MEASURED facts
 (From the one good physical run, iPad Air 11" M2 2024 + Windows, 2026-09-20 — do not extend these.)
 - iPad ordinary touch events ≈40–60 Hz; raw/coalesced samples up to ≈120 Hz. Touch-event rate is
@@ -198,6 +246,10 @@ Implemented: **modifier hold + combined keycaps after `0bccedc`** — contract d
 (A–G, spec `d1b68d9`); implemented in `dbe36ab`, CI GREEN (run `35652625241`).
 Remaining: the user's physical verification per §9.
 
+Next stage after that: **6. Gyro aim** — contract defined in §5.1 (this spec commit, including
+the single permitted protected-file exception for `NSMotionUsageDescription`), implementation
+not started.
+
 ## 9. Acceptance criteria
 (Procedure migrated from `docs/PHYSICAL_TEST.md`. Only the user, on the physical iPad + Windows,
 can pass it.)
@@ -251,6 +303,9 @@ can pass it.)
   done; known risk to GATT descriptors/pairing (protected stack); research before implementing;
   feature flag; separate branch; owner/LEAD decision.
 - **Gyro aim:** not implemented (game overlay placeholders: Touch/Gyro/Hybrid, recenter — "later").
+  Behavior contract is now defined in §5.1; implementation and hardware acceptance still
+  pending (`BTRemote/Info.plist` still has no `NSMotionUsageDescription` — that key is the only
+  exception §5.1 J allows).
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
   HEAD `dbe36ab` (CI run `35652625241`; earlier code HEADs: `ac87c61` / run `35642707603`,
@@ -307,6 +362,7 @@ truly needs more.
 - Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software").
 - Dynamic per-app panels; OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
-  BLE-stack implications to be researched), gyro aim, native dictation, modifier combined
+  BLE-stack implications to be researched), gyro aim (contract already defined in §5.1 —
+  implement from there, no new spec needed), native dictation, modifier combined
   keycaps / sticky restore (specified in §5/§9; implemented in `ac87c61` + `dbe36ab` —
   physical verification pending).
