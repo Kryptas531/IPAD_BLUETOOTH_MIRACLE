@@ -1178,6 +1178,138 @@
         }
       }
     },
+    "input.control": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control"
+          }
+        }
+      }
+    },
+    "input.more_shortcuts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More shortcuts"
+          }
+        }
+      }
+    },
+    "input.extra_keys": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extra keys"
+          }
+        }
+      }
+    },
+    "input.text_entry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text entry"
+          }
+        }
+      }
+    },
+    "deck.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "COPY"
+          }
+        }
+      }
+    },
+    "deck.paste": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PASTE"
+          }
+        }
+      }
+    },
+    "deck.cut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CUT"
+          }
+        }
+      }
+    },
+    "deck.undo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UNDO"
+          }
+        }
+      }
+    },
+    "deck.task_view": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TASK VIEW"
+          }
+        }
+      }
+    },
+    "deck.screenshot": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SCREENSHOT"
+          }
+        }
+      }
+    },
+    "deck.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SEARCH"
+          }
+        }
+      }
+    },
+    "deck.play_pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PLAY/PAUSE"
+          }
+        }
+      }
+    },
     "input.gyro": {
       "extractionState": "manual",
       "localizations": {
