@@ -68,8 +68,11 @@ right)`, `move(dx:dy:)`, `scroll(wheel)`, `keyReports(for:modifiers:)`; ASCII→
 — plus `BTRemote/Resources/*.json` (not in git; downloaded during CI by
 `ci_scripts/ci_post_clone.sh` from `NordicSemiconductor/bluetooth-numbers-database`, verified by
 reading the script) and `BTRemote/Info.plist`/`entitlements.plist` (contents not read in prior
-sessions — ci-worker zone). The only exception any spec commit may grant is defined in §5.1 J:
-adding `NSMotionUsageDescription` to `BTRemote/Info.plist`; everything else there stays untouched.
+sessions — ci-worker zone). The only exceptions any spec commit may grant are: adding
+`NSMotionUsageDescription` to `BTRemote/Info.plist` (§5.1 J), and adding
+`NSLocalNetworkUsageDescription` to `BTRemote/Info.plist` with exactly the text
+`BTRemote connects to your paired Windows PC on the local network to show app-specific controls.` (§7.2). No other
+key may be added there and everything else in those two files stays untouched.
 
 ## 5. IMPLEMENTED and CONTRACT-DEFINED behavior
 (§5.1 code now EXISTS in current main — implemented per spec `b9caa6d` in `1284aca` with fixes
@@ -198,11 +201,12 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
 - **I. Controls:** mode (Touch / Gyro / Hybrid), sensitivity, gyro sensitivity and recenter are
   exposed only in the temporary GAME chrome (§7); no permanent panels, no new telemetry.
 - **J. Boundaries:** do not change Direct Input, and do not change the protected BLE/HID boundary
-  (§4) — gyro output reuses the existing relative mouse report path. The single permitted
+  (§4) — gyro output reuses the existing relative mouse report path. One permitted
   protected-file exception is adding **only** `NSMotionUsageDescription` to `BTRemote/Info.plist`
   with exactly the text `BTRemote uses device motion to control the mouse in GAME mode.`
-  (technically required for CoreMotion device attitude; the key is absent as of `dbe36ab`).
-  That key requires focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
+  (technically required for CoreMotion device attitude; the key is absent as of `dbe36ab`); the
+  other permitted exception is `NSLocalNetworkUsageDescription` as defined in §4/§7.2.
+  Both keys require focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
   `BTRemote/Classic/`, `BTRemote/HIDInput.swift` and `BTRemote/HIDReports.swift` stay untouched.
 - **K. No artificial smoothing, filtering or latency** may be added to the input pipeline.
 - **L. Verification:** implementation may claim CI only. Do not claim gyro aim works until the
@@ -392,6 +396,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   connection; the endpoint must reject any peer that does not present it. Re-pairing requires
   repeating the local handshake. The pairing secret, tokens and certificates are never committed to
   git (the §12 "never commit credentials" rule applies).
+  The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
+  when it actually pairs with or connects to the helper — never at launch and never for the plain
+  §7.1 path. If the user denies that permission, the app behaves exactly as §7.1 defines (generic
+  CONTROL layout); denial must not affect BLE HID pairing or any existing input path.
 - **D. Executable identity.** The helper identifies the foreground application by its **executable
   identity** — the full path and file name of the process owning the foreground window. It does NOT
   identify apps by window title (titles are user- and locale-editable and are not trusted for
@@ -437,7 +445,8 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   not implemented**. The core product line stays exactly "IPAD → BLE HID → WINDOWS"; the helper sits
   beside that path and only selects which layout the iPad presents, it never carries input.
 - **I. Verification / limits.** Implementation may claim CI only. Foreground-detection correctness,
-  secure pairing, per-app layout correctness and the unknown/disconnected fallback all stay
+  secure pairing, per-app layout correctness, the iOS local-network permission prompt (requested
+  only at pairing/connect time) and the unknown/disconnected/denied-permission fallback all stay
   "implemented, physical verification pending" until the owner runs the added §9 checks with the
   helper on the real Windows PC + iPad.
 
@@ -544,6 +553,11 @@ can pass it.)
   input path must still behave exactly as in items 4–7 — mouse move/tap/scroll, keyboard typing and
   Direct Input — confirming the helper never carries, sends or overrides HID input and never
   re-negotiates BLE/HOGP pairing.
+  (e) **Local-network permission:** verify the iOS local-network permission
+  prompt (`NSLocalNetworkUsageDescription`, §4) appears only on the first helper pairing/connect and
+  never at app launch and never on the plain §7.1 path; verify that denying it leaves the generic
+  §7.1 CONTROL layout and all BLE HID pairing and existing input paths (items 4–7 / §5) completely
+  unaffected.
 - Ready = all mandatory items (former MVP table 1–14) plus items 9–10 work AND lock-screen
   acceptance passes.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
@@ -573,8 +587,8 @@ can pass it.)
 - **Gyro aim:** implemented (SPEC §5.1; commits `1284aca` + fixes `28867db`/`aa4443c`; CI green
   run `36203590465`; merged `c89997f`) — physical verification pending per §5.1 L / §9.
   `BTRemote/Info.plist` now contains `NSMotionUsageDescription` with exactly the text
-  `BTRemote uses device motion to control the mouse in GAME mode.` (the single protected-file
-  exception §5.1 J allows).
+  `BTRemote uses device motion to control the mouse in GAME mode.` (the motion protected-file
+  exception §5.1 J allows; the separate local-network exception is defined in §4/§7.2).
 - **Unified CONTROL surface (§7.1):** implemented — code `fd50ae1` (`feat(ios): add unified
   CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
