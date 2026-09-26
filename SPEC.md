@@ -201,11 +201,12 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
 - **I. Controls:** mode (Touch / Gyro / Hybrid), sensitivity, gyro sensitivity and recenter are
   exposed only in the temporary GAME chrome (§7); no permanent panels, no new telemetry.
 - **J. Boundaries:** do not change Direct Input, and do not change the protected BLE/HID boundary
-  (§4) — gyro output reuses the existing relative mouse report path. The single permitted
+  (§4) — gyro output reuses the existing relative mouse report path. One permitted
   protected-file exception is adding **only** `NSMotionUsageDescription` to `BTRemote/Info.plist`
   with exactly the text `BTRemote uses device motion to control the mouse in GAME mode.`
-  (technically required for CoreMotion device attitude; the key is absent as of `dbe36ab`).
-  That key requires focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
+  (technically required for CoreMotion device attitude; the key is absent as of `dbe36ab`); the
+  other permitted exception is `NSLocalNetworkUsageDescription` as defined in §4/§7.2.
+  Both keys require focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
   `BTRemote/Classic/`, `BTRemote/HIDInput.swift` and `BTRemote/HIDReports.swift` stay untouched.
 - **K. No artificial smoothing, filtering or latency** may be added to the input pipeline.
 - **L. Verification:** implementation may claim CI only. Do not claim gyro aim works until the
