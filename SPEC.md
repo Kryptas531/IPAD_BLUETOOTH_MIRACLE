@@ -157,8 +157,8 @@ see §12.)
 - **Modes UI:** compact switcher GAME | TRACKPAD | TOUCH | DECK + compact status ("BT ● KB ●").
   TOUCH = **EXPERIMENTAL / in development** (absolute digitizer not implemented). IMPLEMENTED.
   This is the shipped state at base `3a3ddf2`; the unified **CONTROL** mode defined in §7.1
-  supersedes the TRACKPAD/DECK halves of this list once implemented. Do not describe CONTROL as
-  implemented before its implementation commit.
+  supersedes the TRACKPAD/DECK halves of this list. CONTROL is now implemented (code `fd50ae1`
+  [spec `97d459b`], merged `482155b` via PR #17); physical verification stays pending per §9.
 
 ### 5.1 CONTRACT DEFINED AND IMPLEMENTED (physical acceptance pending)
 Swift code for this now exists in main (implemented in `1284aca`, fixes `28867db`/`aa4443c`,
@@ -268,7 +268,7 @@ section that assume separate TRACKPAD / DECK top-level modes; nothing else in §
   refactor over existing working views, preserve all implemented features, working input paths,
   Direct Input, current CI and BLE behavior.
 
-## 7.1 Unified CONTROL mode — CONTRACT DEFINED, NOT YET IMPLEMENTED
+## 7.1 Unified CONTROL mode — CONTRACT DEFINED AND IMPLEMENTED (physical acceptance pending)
 Spec-first contract for the operator-requested unified iPad control UX. Defined at base
 `3a3ddf2`; no Swift, README or other file is changed by this spec commit. The implementation
 commit must reference this spec SHA. Nothing here changes any HID report, keycode, gesture,
@@ -575,9 +575,10 @@ can pass it.)
   `BTRemote/Info.plist` now contains `NSMotionUsageDescription` with exactly the text
   `BTRemote uses device motion to control the mouse in GAME mode.` (the single protected-file
   exception §5.1 J allows).
-- **Unified CONTROL surface (§7.1):** spec-defined only, NOT implemented — the shipped app still
-  has separate TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift`
-  at `3a3ddf2`); implementation must follow this spec commit.
+- **Unified CONTROL surface (§7.1):** implemented — code `fd50ae1` (`feat(ios): add unified
+  CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
+  TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
+  `3a3ddf2`). Physical verification stays pending per §9.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
   HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
