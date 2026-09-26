@@ -364,7 +364,7 @@ actions moves.
   physical verification pending" until the owner runs the §9 checks in both orientations. No
   dictation work is included here (still §8 stage 5 / §13).
 
-## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED, NOT YET IMPLEMENTED
+## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED (implementation in progress; CI and physical acceptance pending)
 Spec-first contract for the owner-approved optional Windows helper that tells the iPad which
 application is in the foreground so the iPad can present an app-specific CONTROL layout. This is
 the previously non-goaled "Windows companion / WebSocket transport" and "dynamic per-app panels"
@@ -384,18 +384,78 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   layout. Additive convenience only; no shipped feature, input path, HID report or key may be
   removed or changed to accommodate it.
 - **B. Secure local communication.** Helper and iPad talk only over the local network (same LAN /
-  Wi-Fi); the helper must bind to a local interface and must never listen on a public/Internet
-  interface. The channel is authenticated and encrypted (TLS). No plaintext transport is permitted.
-  The channel is **unidirectional for control**: the helper only emits `foreground-changed →
-  <identity>` notifications to the iPad; it must never send HID reports or command the iPad to press
-  anything. All input continues to flow iPad → Windows over the existing BLE HID path.
-- **C. Secure local pairing.** One-time local pairing between the helper and the target iPad, done
-  on the same LAN. The helper surfaces a short pairing code (or QR) that the user enters on the
-  iPad (mirrors the existing "pair the Bluetooth device" flow conceptually, §5 / §9). A successful
-  handshake establishes a long-lived shared secret / pinned certificate, re-used on every later
-  connection; the endpoint must reject any peer that does not present it. Re-pairing requires
-  repeating the local handshake. The pairing secret, tokens and certificates are never committed to
-  git (the §12 "never commit credentials" rule applies).
+  Wi-Fi). The helper binds exactly one concrete, operational, non-tunnel **private/local IPv4
+  unicast** address (loopback, RFC 1918, or link-local) on the configured port (default **8443**,
+  optional first command-line argument), and refuses to start when no such interface exists; it must
+  never listen on a public/Internet-facing, wildcard (`0.0.0.0` / `::`) or tunnel address.
+  The channel is encrypted and authenticated end to end over **TLS** carrying **WebSocket** text
+  frames: the iPad connects to `wss://<private-IPv4>:<port>` and the helper completes the RFC 6455
+  server handshake (Sec-WebSocket-Key/Accept) over the established TLS stream. No plaintext
+  transport exists anywhere in the helper and none is permitted.
+  The TLS endpoint uses a runtime-generated **self-signed** certificate (`CN=ipad-foreground-helper`,
+  RSA 2048, SHA-256, 30 days), persisted so the same key pair — and therefore the same **SHA-256
+  certificate fingerprint** — survives helper restarts. The iPad trust-on-first-use **pins** that
+  fingerprint: it accepts the certificate only when the SHA-256 digest of the leaf certificate
+  equals the fingerprint the helper printed and the user entered in iPad settings, and cancels the
+  authentication challenge otherwise. If the persisted certificate becomes unusable the helper
+  regenerates one and the iPad must re-pin the new fingerprint.
+  **Auth before notifications:** the helper sends no application data whatsoever until the
+  connecting device has proved possession of the credential defined in C. After that exchange the
+  only message it ever sends is the single notification
+  `{"type":"foreground-changed","identity":"<token>"}` (tokens `vscode` | `chrome` | `explorer` |
+  `generic`, §D/§E; the helper re-sends it only when the resolved identity changes, polling the
+  foreground window every 350 ms). It never sends HID reports, keystrokes, shortcuts, commands,
+  window titles, executable paths or arbitrary process data.
+  The channel is **unidirectional for control**: one helper instance serves one paired iPad at a
+  time, and the link never carries input in either direction. All input continues to flow
+  iPad → Windows over the existing BLE HID path.
+- **C. Secure local pairing (pair → secret → reconnect).** One-time local pairing between the
+  helper and the target iPad, done on the same LAN. The wire exchange is exactly the following, and
+  nothing in the implementation may invent other message types or fields:
+  1. The helper binds its local endpoint, prints the certificate **SHA-256 fingerprint** and a
+     cryptographically random **six-digit one-time pairing code** (`000000`–`999999`) on the local
+     Windows console, and waits for the iPad. A code is only meaningful while no valid stored secret
+     exists; the auth mode is fixed at helper start, so the console output and the credential the
+     server will accept can never disagree.
+  2. The user enters the Windows private address, port, fingerprint and code in the iPad's
+     **Windows helper** settings section and taps **Connect**. The iPad opens the TLS/WebSocket
+     connection and sends its credential **first**, the exact frame
+     `{"type":"pair","code":"<code>"}`, inside the helper's 5-second window (one frame, ≤64 bytes).
+  3. On a successful pair the helper generates the long-lived **256-bit (32-byte) device secret**,
+     persists it DPAPI-protected for the current Windows user
+     (`%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin`, `CryptProtectData`, never as
+     plaintext), and hands it to the iPad **once**, over the already-established TLS channel, as
+     `{"type":"paired","secret":"<base64>"}`. The one-time code is now spent and is never accepted or
+     reprinted.
+  4. On every later connection (helper restart, Wi-Fi drop, iPad reboot, or a reconnect after the
+     helper lost the previous socket) the iPad authenticates with
+     `{"type":"reconnect","secret":"<base64>"}` and the helper replies `{"type":"reconnected"}` — no
+     new code is issued, entered or accepted. The helper verifies the credential against its own
+     expected request with a fixed-time comparison, so the device never has to re-enter a code the
+     helper no longer prints; a device reconnecting on a fresh socket replaces the stale one.
+  The endpoint rejects any peer that does not present that credential: a connection that fails TLS,
+  the WebSocket handshake, or credential verification is closed without a single byte of payload and
+  leaves any previously authenticated session untouched. Re-pairing from scratch requires restarting
+  the helper (fresh code, and re-pinning if its certificate was regenerated).
+  The iPad keeps the helper-issued 32-byte secret in the **iOS Keychain only** (generic password,
+  service `io.github.jqssun.btremote.windows-foreground`, account `device-secret`,
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`); host, port and fingerprint are ordinary app
+  settings and the secret is never stored with them. "Unpair and forget this helper" clears it.
+  Storage is **fail-closed**: if the secret cannot be written the iPad reports an error and stays on
+  the §7.1 generic layout instead of claiming a link it could not re-authenticate later.
+  The one-time pairing code is deliberately displayed to the user, not hidden: `Program.Main` prints
+  it on the local Windows console as `[windows-foreground] one-time pairing code: <code>` so the user
+  can type it into the iPad. It is a transient user-interface affordance, not a stored credential:
+  it is never persisted (no file, no UserDefaults, no Keychain) and never sent to any third party or
+  to any non-local destination. The long-lived device secret is never printed anywhere (the helper
+  only says that a secret was issued and stored); it crosses the wire exactly once, inside the TLS
+  `{"type":"paired",...}` frame, and afterwards exists only in the helper's DPAPI-protected file and
+  the iPad Keychain. Neither the code nor the secret is ever committed to git (the §12 "never commit
+  credentials" rule applies).
+  This clause records the exact wire contract the in-progress code follows
+  (`companion/WindowsForeground/`, `BTRemote/WindowsForeground.swift`); it does **not** certify
+  completion — implementation claims stay CI-only per I, and physical acceptance stays outstanding
+  (§9 item 10).
   The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
   when it actually pairs with or connects to the helper — never at launch and never for the plain
   §7.1 path. If the user denies that permission, the app behaves exactly as §7.1 defines (generic
