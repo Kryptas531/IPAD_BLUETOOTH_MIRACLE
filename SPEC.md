@@ -114,19 +114,22 @@ see §12.)
   build-unsigned); hardware behavior stays NOT VERIFIED until the user's physical iPad +
   Windows test. History: first built in `ac87c61` (CI run `35642707603`) — superseded,
   because there an ordinary keypress released a physically held modifier.
-- **Extended keys + keyboard overlay:** Insert/Delete/Home/End/PgUp/PgDn/arrows + temporary
-  F1–F12 grid (`BTRemote/KeyboardView.swift`). Dedicated combined keycaps ALT+TAB and WIN+L are
-  part of the contract above (they send exactly that combination via `keyReports`); they live in
-  the temporary keyboard/extended overlay so the canonical DECK 4×4 stays unchanged;
+- **Extended keys + keyboard overlay:** Insert/Delete/Home/End/PgUp/PgDn/arrows/SPACE/PRTSC +
+  right-side Ctrl/Alt Gr/Shift/Win modifier keycaps + temporary F1–F12 grid, plus the bottom
+  strip Ctrl/Win/Alt/Shift + ESC/TAB/ENTER + the panel toggle (`BTRemote/KeyboardView.swift`).
+  No shipped control may be dropped from this inventory. Dedicated combined keycaps ALT+TAB and
+  WIN+L are part of the contract above (they send exactly that combination via `keyReports`);
+  they live only in this custom panel, so the canonical DECK 4×4 stays unchanged and those two
+  combined keycaps are not duplicated in the always-visible quick-action set (§7.1 B);
   implemented in `dbe36ab` (CI run `35652625241` GREEN; physical verification pending).
   The original extended keys are IMPLEMENTED (CI VERIFIED).
   Under §7.1 E this custom panel is the temporary **Extra keys** panel and is explicitly NOT the
-  iOS software keyboard.
+  iOS software keyboard, and it is a different panel from the §7.1 C **More shortcuts** panel.
 - **DECK:** Windows control surface — shortcuts + navigation + F-keys; page 1 (COPY/PASTE/CUT/
-  UNDO, TASK MGR, EXPLORER/SEARCH, TASK VIEW = Win+Tab, DESK ←/→ = Win+Ctrl+arrows, SCREENSHOT =
-  Win+Shift+S, vol/mute/play-pause), page 2 (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/
-  PGUP/UP/PGDN/LEFT/DOWN/RIGHT/F-KEYS → temporary F-grid); swipe or buttons to switch
-  (`BTRemote/RemoteView.swift`). Single-report combos work via `keyReports(for:modifiers:)`.
+  UNDO, TASK MGR, EXPLORER/SEARCH/DESKTOP, TASK VIEW = Win+Tab, DESK ←/→ = Win+Ctrl+arrows,
+  SCREENSHOT = Win+Shift+S, vol/mute/play-pause), page 2 (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/
+  HOME/END/PGUP/UP/PGDN/PRTSC/LEFT/DOWN/RIGHT/F-KEYS → temporary F-grid); swipe or buttons to
+  switch (`BTRemote/RemoteView.swift`). Single-report combos work via `keyReports(for:modifiers:)`.
   IMPLEMENTED (CI VERIFIED). Under §7.1 B/C these same actions are re-homed into CONTROL's
   always-visible quick actions + the temporary **More shortcuts** panel; every action keeps the
   exact report it sends today (this bullet remains the list of record).
@@ -243,15 +246,16 @@ section that assume separate TRACKPAD / DECK top-level modes; nothing else in §
   quick-action set around the pad (§7.1 B) — a compact edge/ring strip of existing actions, never
   a wide sidebar, never a second full-screen surface, never the multi-row fixed keyboard.
   Custom extended keys ("Extra keys") open as temporary overlays and never shrink the trackpad
-  permanently.
+  permanently. "Extra keys" (custom keyboard panel) and "More shortcuts" (full DECK panel) are two
+  distinct panels with separate entry controls; only one of them may be open at a time.
 - GAME ≈ fullscreen input surface; controls (Touch/Gyro/Hybrid, sensitivity, gyro sensitivity,
   recenter, debug toggle) only as temporary overlay; optional LMB/RMB zones semi-transparent/
   configurable/removable; do not draw a WASD keyboard (external physical keyboard assumed).
 - TOUCH ≈100 % surface, controls hidden, edge gestures only (EXPERIMENTAL).
 - DECK is no longer a separate full-screen page: it is the Windows control action set hosted
-  inside CONTROL (always-visible quick actions + temporary "More shortcuts", §7.1 B/C). DECK
-  remains a Windows control surface, not the old media/TV remote, and its action list and HID
-  reports (§5 "DECK") are unchanged.
+  inside CONTROL (always-visible quick actions + temporary "More shortcuts", §7.1 B/C; this is not
+  the custom "Extra keys" keyboard panel, §7.1 E). DECK remains a Windows control surface, not the
+  old media/TV remote, and its action list and HID reports (§5 "DECK") are unchanged.
 - Direct Input: compact status icon; capture/release controls via long-press on keyboard
   indicator or in settings; a physical Windows keyboard must keep working as is.
 - Dictation: small 🎙 push-to-dictate button, temporary transcript not covering the central
@@ -283,37 +287,72 @@ actions moves.
 - **B. Always-live pad + reachable shortcuts.** CONTROL always presents the live central trackpad
   and reachable DECK shortcuts at the same time in the same mode. Always-visible quick-action set
   (concrete, existing actions and existing reports only, no new keycodes, no new reports):
-  `COPY` (Ctrl+C), `PASTE` (Ctrl+V), `CUT` (Ctrl+X), `UNDO` (Ctrl+Z), `ALT+TAB`, `WIN+L`,
-  `SEARCH` (Win+S), `PLAY/PAUSE` (consumer). Small icon/label buttons only — never a full keycap
-  keyboard and never wide enough to pull the pad away from the centre.
-- **C. Everything else stays reachable, temporarily.** All remaining DECK actions — page 1
-  (TASK MGR, EXPLORER, DESK, DESK ←/→, SCREENSHOT, VOL−, MUTE, VOL+), page 2 (ESC, TAB, ENTER,
-  BACKSPACE, INSERT, DELETE, HOME, END, PGUP, UP, PGDN, LEFT, DOWN, RIGHT, F-KEYS → the temporary
-  F1–F12 grid) and the page-switch control itself — remain reachable from one temporary
-  **"More shortcuts"** panel opened from CONTROL, without leaving CONTROL. Same action → same
-  report (single-report `keyReports(for:modifiers:)` / `sendConsumer`) as listed in §5 "DECK".
+  `COPY` (Ctrl+C), `PASTE` (Ctrl+V), `CUT` (Ctrl+X), `UNDO` (Ctrl+Z), `TASK VIEW` (Win+Tab),
+  `SCREENSHOT` (Win+Shift+S), `SEARCH` (Win+S), `PLAY/PAUSE` (consumer). Small icon/label buttons
+  only — never a full keycap keyboard and never wide enough to pull the pad away from the centre.
+  `ALT+TAB` and `WIN+L` are deliberately NOT in this set: they are combined keycaps belonging to
+  the custom keyboard panel (§7.1 E) and the always-visible set must stay a subset of existing
+  DECK reports (§5 "DECK").
+- **C. Everything else stays reachable, temporarily.** **"More shortcuts"** is one single temporary
+  panel that shows the whole remaining DECK surface: page 1 (TASK MGR, EXPLORER, DESKTOP,
+  DESK ←/→, VOL−, MUTE, VOL+) and page 2 (ESC, TAB, ENTER, BACKSPACE, INSERT, DELETE, HOME, END,
+  PGUP, UP, PGDN, PRTSC, LEFT, DOWN, RIGHT, F-KEYS → the temporary F1–F12 grid) and the page-switch
+  control itself — all still reachable from CONTROL, without leaving CONTROL and without dropping
+  any shipped control. Same action → same report (single-report `keyReports(for:modifiers:)` /
+  `sendConsumer`) as listed in §5 "DECK". The actions that also sit in the always-visible
+  quick-action set (B) appear in both places; that duplication is intentional.
+  "More shortcuts" (DECK panel) and "Extra keys" (custom keyboard panel, E) are **two distinct
+  panels with separate entry controls** — neither may be implemented or labelled as the other, and
+  only one of the two may be open at a time: opening one closes the other. Overlap between them is
+  intentional and must not be "cleaned up": the custom panel deliberately repeats the common
+  navigation keys (ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/PGUP/PGDN/arrows/SPACE/PRTSC/
+  F1–F12) because those keycaps have to sit in the same panel as the modifiers they combine with
+  (§5 A–G).
 - **D. Touch-through.** The trackpad stays the visual and interactive centre and its free surface
   must remain touchable: only actual button/control hit areas may intercept touches. Decorative
   material behind controls must not participate in hit testing (reuse the existing
   `.allowsHitTesting(false)` treatment from the GAME chrome); a control layer must never swallow
   pad gestures.
-- **E. Custom key panel ≠ iOS software keyboard.** The app's custom extended-key panel
-  (Ctrl/Win/Alt/Shift hold + ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/PGUP/PGDN/arrows/
-  F1–F12 + ALT+TAB/WIN+L) is a distinct thing from the iOS software keyboard. It is closed by
-  default and toggled by one clearly labelled **"Extra keys"** control that also carries an
-  explicit close/toggle affordance. Toggling Extra keys must not set TextField focus and must not
-  summon the native iOS keyboard. Only focusing/tapping the text-entry field may summon the system
-  keyboard; text-entry, live-typing, Send/Clear and the §5 A–G modifier semantics stay unchanged
-  (whatever panel holds the modifiers must also hold the keys they combine with, so hold-Alt-then-
-  press-Tab and the dedicated ALT+TAB / WIN+L keycaps still work while that panel is open).
-  Mutual exclusion (predictable, avoids both panels covering the pad): opening "Extra keys" while
-  the native keyboard is up dismisses the native keyboard (focus cleared) so only Extra keys is
-  shown; tapping/focusing the text-entry field while Extra keys is open closes Extra keys so only
-  the system keyboard is shown. At most one of the two panels is ever visible.
+- **E. Text entry ≠ custom key panel ≠ iOS software keyboard ≠ "More shortcuts".** Two things
+  that today share one screen must stay separate:
+  - **Text entry** — the shipped text-entry field with Send/Clear (`KeyboardView` `TextField` +
+    `KeyTypist` + `HIDInput.type(char)`, §4/§5 "Keyboard"). It is **independent of the custom
+    keycap panel**: the field is not embedded in it, and it must stay reachable without ever
+    opening that panel. Text entry is its own temporary surface, opened by its own clearly
+    labelled, always-reachable **"Text entry"** control (a third entry control next to
+    "More shortcuts" and "Extra keys"; no mode switch needed to reach it).
+  - **Extra keys** — the app's custom extended-key panel (Ctrl/Win/Alt/Shift hold + right-side
+    Ctrl/Alt Gr/Shift/Win + ESC/TAB/ENTER/BACKSPACE/INSERT/DELETE/HOME/END/PGUP/PGDN/arrows/
+    SPACE/PRTSC + F1–F12 + ALT+TAB/WIN+L, together with the bottom strip Ctrl/Win/Alt/Shift +
+    ESC/TAB/ENTER + the panel toggle). It is a distinct thing from the iOS software keyboard, and a
+    distinct thing from the §7.1 C "More shortcuts" DECK panel. It is closed by default and toggled
+    by one clearly labelled **"Extra keys"** control that also carries an explicit close/toggle
+    affordance. It contains **only** the shipped custom keycaps listed above — no embedded text
+    field, no embedded Send/Clear. No shipped keycap listed above may be omitted.
+  Text entry, live-typing, Send/Clear and the §5 A–G modifier semantics stay unchanged (whatever
+  panel holds the modifiers must also hold the keys they combine with, so hold-Alt-then-press-Tab,
+  the right-side modifiers, SPACE, PRTSC and the dedicated ALT+TAB / WIN+L keycaps still work while
+  that panel is open).
+  Opening a surface and focusing a field are different events. **Opening** the "Text entry" surface
+  alone must not force focus into the field and must not summon the iOS keyboard: the field stays
+  visible on the surface and the user taps it. Only **tapping/focusing** that separate field may
+  summon the system keyboard. Auto-focusing the field when the surface opens is allowed only if
+  this spec explicitly specifies it and the behaviour is user-visible; it is not specified here.
+  **The "Extra keys" toggle must never focus the TextField, must never open "Text entry", and must
+  never summon the native iOS keyboard.**
+  Mutual exclusion (predictable, avoids two panels covering the pad): opening "Text entry" closes
+  "Extra keys" and closes "More shortcuts"; opening "Extra keys" while the native keyboard is up
+  dismisses the native keyboard (focus cleared) so only Extra keys is shown; tapping/focusing the
+  text-entry field while Extra keys is open closes Extra keys so only the system keyboard is shown;
+  opening "Extra keys" while "More shortcuts" is open closes "More shortcuts", and vice versa. At
+  most one of the three app surfaces ("Text entry"/native keyboard, "More shortcuts", "Extra keys")
+  is ever visible — but the "Text entry" field and the OS keyboard are one workflow, not two
+  competing panels: once the field is focused, the field must stay present and usable while the
+  iOS software keyboard is visible, so live typing, Send and Clear can still be used above it.
 - **F. Responsive orientation.** Landscape: pad central with the compact action controls at the
   outer edges. Portrait: pad centred/largest with the compact controls above and below. No huge
   permanent sidebar, no mode-specific full-screen switch, no cluttered fixed keyboard above the
-  pad (the multi-row keycap panel and the always-visible bottom strip become the temporary
+  pad (the multi-row keycap panel and the always-visible bottom strip both become the temporary
   "Extra keys" panel). All existing trackpad gestures (1-finger move, tap → LMB, two-finger move
   → scroll, two-finger tap → RMB, drag) and all existing DECK key reports must be preserved
   exactly.
@@ -372,16 +411,26 @@ can pass it.)
   (b) the central touchpad and the compact quick actions are visible together, pad central (and
   largest) with actions on the outer edges in landscape / above and below in portrait;
   (c) every existing DECK shortcut and F-key is still reachable — spot-check COPY, PASTE, CUT,
-  UNDO, ALT+TAB, WIN+L, SEARCH, PLAY/PAUSE from the always-visible set, and TASK MGR, EXPLORER,
-  DESK, DESK ←/→, SCREENSHOT, VOL−, MUTE, VOL+, ESC, TAB, ENTER, BACKSPACE, INSERT, DELETE,
-  HOME, END, PGUP, UP, PGDN, LEFT, DOWN, RIGHT and F1–F12 from "More shortcuts" — and each still
-  reaches Windows;
+  UNDO, TASK VIEW, SCREENSHOT, SEARCH, PLAY/PAUSE from the always-visible set, and TASK MGR,
+  EXPLORER, DESKTOP, DESK ←/→, VOL−, MUTE, VOL+, ESC, TAB, PRTSC, ENTER, BACKSPACE, INSERT,
+  DELETE, HOME, END, PGUP, UP, PGDN, LEFT, DOWN, RIGHT and F1–F12 from the temporary
+  "More shortcuts" DECK panel — and each still reaches Windows;
   (d) trackpad gestures from item 4 still work in the pad's free areas while controls are present;
-  (e) "Extra keys" opens the custom panel, does NOT summon the iOS keyboard, and closes explicitly
-  via its own affordance;
-  (f) tapping the text-entry field DOES summon the system keyboard and typing still reaches
-  Windows;
-  (g) opening "Extra keys" while the native keyboard is up leaves exactly one panel visible;
+  (e) "Extra keys" opens the custom keyboard panel — a panel distinct from "More shortcuts", with
+  its own separate entry control, and opening it closes "More shortcuts" — contains only the
+  shipped custom keycaps (no embedded text field, no embedded Send/Clear), does NOT summon the iOS
+  keyboard, does NOT focus the text field, and closes explicitly via its own affordance; the
+  shipped custom controls must all still be present and working from it: PRTSC reaches Windows,
+  SPACE types a space, and the right-side Ctrl/Alt Gr/Shift/Win modifiers hold-and-combine exactly
+  like the left ones (§5 A–G);
+  (f) "Text entry" is reachable on its own, independently of "Extra keys" (its own entry control,
+  no mode switch, the field is not inside the custom keycap panel); opening the "Text entry"
+  surface alone does not force focus and does not by itself raise the iOS keyboard; tapping the
+  text-entry field DOES summon the system keyboard and typing still reaches Windows;
+  (g) opening "Extra keys" while the native keyboard is up leaves exactly one surface visible;
+  opening "Text entry" closes "Extra keys" and "More shortcuts"; once the field is focused it
+  stays present and usable while the native iOS keyboard is visible, and live typing, Send and
+  Clear all still work with that keyboard on screen;
   (h) GAME behaviour is unchanged.
 - Ready = all mandatory items (former MVP table 1–14) plus item 9 work AND lock-screen acceptance
   passes.
