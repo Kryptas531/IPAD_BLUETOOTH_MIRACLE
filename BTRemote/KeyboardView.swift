@@ -102,7 +102,20 @@ struct KeyboardView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(.thinMaterial.opacity(0.88))
+                        // The GAME chrome spans the whole screen (Spacer between the top bar and
+                        // the bottom strip), so its material fill must not take part in hit
+                        // testing: a full-screen material layer on top of TrackpadPanel swallows
+                        // the touches used by the GAME touch/hybrid input source (SPEC §5.1 B),
+                        // which is why movement only worked after the chrome auto-hid.
+                        // The decorative layer is therefore explicitly non-interactive; the
+                        // buttons/picker/sliders/keyboard controls are siblings drawn above it
+                        // and stay interactive.
+                        .background {
+                            Rectangle()
+                                .fill(.thinMaterial)
+                                .opacity(0.88)
+                                .allowsHitTesting(false)
+                        }
                     } else {
                         Button("•••") {
                             gameChromeVisible = true
