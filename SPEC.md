@@ -392,8 +392,20 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
 - **B. Secure local communication.** Helper and iPad talk only over the local network (same LAN /
   Wi-Fi). The helper binds exactly one concrete, operational, non-tunnel **private/local IPv4
   unicast** address (loopback, RFC 1918, or link-local) on the configured port (default **8443**,
-  optional first command-line argument), and refuses to start when no such interface exists; it must
+  the optional port argument), and refuses to start when no such interface exists; it must
   never listen on a public/Internet-facing, wildcard (`0.0.0.0` / `::`) or tunnel address.
+  On a multihomed Windows host the operator may name the address explicitly:
+  `WindowsForeground [--bind-ip <IPv4>] [port]`. `--bind-ip` is optional and the automatic
+  first-eligible-interface selection above is unchanged when it is absent; the optional port
+  keeps its existing meaning and default **8443**. When `--bind-ip` is given the helper binds
+  exactly that address and nothing else, and only if it is a valid IPv4 private/local unicast
+  address owned by an operational non-tunnel interface on this host. Invalid syntax, a public,
+  wildcard or IPv6 address, or an address not assigned to such an interface, is a startup error:
+  the helper prints usage and does not start. Explicit selection is **fail-closed** — it never
+  silently falls back to another address. In both cases the helper still binds one concrete
+  address only, never a wildcard or public address, and that bound address is the one the user
+  enters in the iPad's **Windows helper** settings (§C); pairing, TLS pinning and the wire
+  exchange in C are unchanged.
   The channel is encrypted and authenticated end to end over **TLS** carrying **WebSocket** text
   frames: the iPad connects to `wss://<private-IPv4>:<port>` and the helper completes the RFC 6455
   server handshake (Sec-WebSocket-Key/Accept) over the established TLS stream. No plaintext
