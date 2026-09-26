@@ -157,8 +157,8 @@ see §12.)
 - **Modes UI:** compact switcher GAME | TRACKPAD | TOUCH | DECK + compact status ("BT ● KB ●").
   TOUCH = **EXPERIMENTAL / in development** (absolute digitizer not implemented). IMPLEMENTED.
   This is the shipped state at base `3a3ddf2`; the unified **CONTROL** mode defined in §7.1
-  supersedes the TRACKPAD/DECK halves of this list once implemented. Do not describe CONTROL as
-  implemented before its implementation commit.
+  supersedes the TRACKPAD/DECK halves of this list. CONTROL is now implemented (code `fd50ae1`
+  [spec `97d459b`], merged `482155b` via PR #17); physical verification stays pending per §9.
 
 ### 5.1 CONTRACT DEFINED AND IMPLEMENTED (physical acceptance pending)
 Swift code for this now exists in main (implemented in `1284aca`, fixes `28867db`/`aa4443c`,
@@ -268,7 +268,7 @@ section that assume separate TRACKPAD / DECK top-level modes; nothing else in §
   refactor over existing working views, preserve all implemented features, working input paths,
   Direct Input, current CI and BLE behavior.
 
-## 7.1 Unified CONTROL mode — CONTRACT DEFINED, NOT YET IMPLEMENTED
+## 7.1 Unified CONTROL mode — CONTRACT DEFINED AND IMPLEMENTED (physical acceptance pending)
 Spec-first contract for the operator-requested unified iPad control UX. Defined at base
 `3a3ddf2`; no Swift, README or other file is changed by this spec commit. The implementation
 commit must reference this spec SHA. Nothing here changes any HID report, keycode, gesture,
@@ -360,12 +360,94 @@ actions moves.
   physical verification pending" until the owner runs the §9 checks in both orientations. No
   dictation work is included here (still §8 stage 5 / §13).
 
+## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED, NOT YET IMPLEMENTED
+Spec-first contract for the owner-approved optional Windows helper that tells the iPad which
+application is in the foreground so the iPad can present an app-specific CONTROL layout. This is
+the previously non-goaled "Windows companion / WebSocket transport" and "dynamic per-app panels"
+work (§11, §13), now approved and specified. Defined at base `482155b`; no Swift, README or other
+file is changed by this spec commit — the implementation commit must reference this spec SHA.
+
+Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only input channel.**
+The helper is out-of-band UI signalling only. It reports a foreground-app identity so the iPad knows
+which layout to show; it does not send HID input, does not replace or re-negotiate BLE/HOGP pairing,
+and is never required for basic mouse / keyboard / trackpad / Direct-Input control. If the helper is
+absent the device behaves exactly as §7.1 defines. §7.1 (unified CONTROL) must be implemented before
+this; each layout below is a variant of that same CONTROL surface, not a new mode or a new surface.
+
+- **A. Product addition.** A small Windows-side companion app ("the helper") runs on the Windows PC,
+  detects the application that currently owns the foreground window, and reports a stable identity
+  for it to the paired iPad. The iPad then swaps its CONTROL panel to the matching app-specific
+  layout. Additive convenience only; no shipped feature, input path, HID report or key may be
+  removed or changed to accommodate it.
+- **B. Secure local communication.** Helper and iPad talk only over the local network (same LAN /
+  Wi-Fi); the helper must bind to a local interface and must never listen on a public/Internet
+  interface. The channel is authenticated and encrypted (TLS). No plaintext transport is permitted.
+  The channel is **unidirectional for control**: the helper only emits `foreground-changed →
+  <identity>` notifications to the iPad; it must never send HID reports or command the iPad to press
+  anything. All input continues to flow iPad → Windows over the existing BLE HID path.
+- **C. Secure local pairing.** One-time local pairing between the helper and the target iPad, done
+  on the same LAN. The helper surfaces a short pairing code (or QR) that the user enters on the
+  iPad (mirrors the existing "pair the Bluetooth device" flow conceptually, §5 / §9). A successful
+  handshake establishes a long-lived shared secret / pinned certificate, re-used on every later
+  connection; the endpoint must reject any peer that does not present it. Re-pairing requires
+  repeating the local handshake. The pairing secret, tokens and certificates are never committed to
+  git (the §12 "never commit credentials" rule applies).
+- **D. Executable identity.** The helper identifies the foreground application by its **executable
+  identity** — the full path and file name of the process owning the foreground window. It does NOT
+  identify apps by window title (titles are user- and locale-editable and are not trusted for
+  identity). The iPad maps a known executable to a layout profile. Canonical mappings defined here:
+  `Code.exe` → VS Code layout, `chrome.exe` → Chrome layout, `explorer.exe` → Explorer layout.
+  Matching is strictly by configured executable file name/path, never by title.
+- **E. Unknown / disconnected fallback.** If the foreground executable is not one of the configured
+  mappings (an unknown app), or the helper is not running / not paired / the channel is down, the
+  iPad must show the default generic CONTROL layout from §7.1, unchanged. Losing the helper
+  connection must never break any input path and must never leave the iPad on a blank or invalid
+  layout — it falls back to §7.1 immediately.
+- **F. Action sets.** Each layout is an ordered set of small labelled buttons (same §7.1 B/C panel
+  affordances: small icon/label buttons, touch-through pad, only one temporary surface open at a
+  time; never a full keycap keyboard or a wide sidebar). Every button is bound to an existing
+  keyboard / shortcut / character sequence that is sent to the focused Windows app through the
+  **existing HID path** (`HIDInput` / `KeyTypist` / `keyReports(for:modifiers:)` / `sendConsumer`,
+  §4 / §5). No new HID report type, no new keycode, no new input channel. The layout definition
+  (which buttons, their labels, and the exact keystroke/character sequence each one sends) is
+  **data / user-configurable**, so a new app profile or a different project's targets can be added
+  without a code change; a layout may only reference sequences that already produce existing HID
+  reports.
+  - **VS Code layout — required action set (verbatim, exact labels):** `New Window`, `Open Folder`,
+    `Frost Pi`, `SideChatAI`, `Explorer`, `Source Control`, `New Terminal`, `Close Saved`,
+    `Split Editor Right`, `Move to the editor`, `Quick Open Browser Tab`. These labels must appear
+    exactly as written. `Frost Pi`, `SideChatAI`, `Quick Open Browser Tab` and any similar
+    project-specific target are **user-defined targets**: each is ultimately a keystroke / shortcut /
+    command sequence that the user configures (e.g. a VS Code command palette entry, a task, a
+    folder path, an extension shortcut). Their concrete keystroke target must be **configurable in
+    app settings**, never hard-coded, so the project can change without a code change.
+  - **Chrome layout — useful action set:** `New Tab` (Ctrl+T), `Close Tab` (Ctrl+W), `Reload`
+    (Ctrl+R), `Focus Address Bar` (Ctrl+L), `Back` (Alt+←), `Forward` (Alt+→), `History` (Ctrl+H),
+    `Show Bookmarks` (Ctrl+Shift+B), `Full Screen` (F11).
+  - **Explorer layout — useful action set:** `New Window`, `New Tab` (Ctrl+T), `This PC`,
+    `Documents`, `Downloads`, `Search` (Ctrl+E), `Select All` (Ctrl+A), `New Folder`
+    (Ctrl+Shift+N), `Rename` (F2).
+- **G. Security constraints.** Privacy-preserving by default: the helper reports an executable
+  identity only when it matches a configured/known mapping; it must not exfiltrate arbitrary
+  foreground executables, window titles or window contents to the device. Transport is
+  localhost/LAN-only, encrypted and mutually authenticated. The helper must not auto-start into a
+  state that overrides the user's §7.1 default layout without a completed pairing (clause E).
+- **H. Relationship to existing scope.** This makes the previously non-goaled "Windows companion /
+  WebSocket transport" and "dynamic per-app panels" items (§11, §13) **approved and specified, but
+  not implemented**. The core product line stays exactly "IPAD → BLE HID → WINDOWS"; the helper sits
+  beside that path and only selects which layout the iPad presents, it never carries input.
+- **I. Verification / limits.** Implementation may claim CI only. Foreground-detection correctness,
+  secure pairing, per-app layout correctness and the unknown/disconnected fallback all stay
+  "implemented, physical verification pending" until the owner runs the added §9 checks with the
+  helper on the real Windows PC + iPad.
+
 ## 8. Active milestone
-Per the reconciled roadmap (2026-09-20/21, renumbered for §7.1):
+Per the reconciled roadmap (2026-09-20/21, renumbered for §7.1/§7.2):
 1. Unified CONTROL surface — UX canon (§7) + unified control contract (§7.1); this absorbs the
    former stages "TRACKPAD usability" and "DECK", which no longer exist as separate modes
-2. GAME usability → 3. Direct Input / Windows keyboard semantics → 4. Gyro aim → 5. Native
-dictation RU/EN → 6. Feedback → 7. experimental TOUCH / absolute digitizer.
+2. GAME usability → 3. Direct Input / Windows keyboard semantics → 4. Gyro aim → 5. Windows
+helper and foreground-aware layouts (§7.2) → 6. Native dictation RU/EN → 7. Feedback → 8.
+experimental TOUCH / absolute digitizer.
 
 Implemented: **modifier hold + combined keycaps after `0bccedc`** — contract defined in §5
 (A–G, spec `d1b68d9`); implemented in `dbe36ab`, CI GREEN (run `35652625241`).
@@ -374,9 +456,14 @@ Remaining: the user's physical verification per §9.
 Stage **4. Gyro aim** is implemented — contract defined in §5.1 (spec `b9caa6d`); code in
 `1284aca` with fixes `28867db`/`aa4443c`; CI green run `36203590465`; merged `c89997f` via
 PR #10. The owner's §9 hardware acceptance for it is still outstanding. Stage **1. Unified
-CONTROL surface** is specified but **not implemented** (§7.1); the next unstarted roadmap stage
-after it is **5. Native dictation RU/EN** — per §13 this requires its own preceding spec commit
-(no dictation contract is written here).
+CONTROL surface** is implemented — contract defined in §7.1 (spec `97d459b`); code in `fd50ae1`
+(`feat(ios): add unified CONTROL workspace`); merged `482155b` via PR #17.
+The next bounded active stage is **5. Windows helper and foreground-aware layouts (§7.2)** — the
+companion app, secure local pairing and per-app/foreground layout contract are now defined by this
+spec commit; the implementation is **not yet done** and the implementation commit must reference
+this spec SHA (§7.2 I). Later unstarted roadmap stages (native dictation RU/EN, feedback,
+experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
+dictation contract is written here.
 
 ## 9. Acceptance criteria
 (Procedure migrated from `docs/PHYSICAL_TEST.md`. Only the user, on the physical iPad + Windows,
@@ -432,8 +519,33 @@ can pass it.)
   stays present and usable while the native iOS keyboard is visible, and live typing, Send and
   Clear all still work with that keyboard on screen;
   (h) GAME behaviour is unchanged.
-- Ready = all mandatory items (former MVP table 1–14) plus item 9 work AND lock-screen acceptance
-  passes.
+- 10. Windows helper and foreground-aware layouts (§7.2) — physical checks only, on the real
+  Windows PC + iPad; the helper is out-of-band signalling only and never carries or sends input:
+  (a) **Pairing:** on the same LAN, start the helper on Windows and complete the one-time local
+  pairing with the iPad via the helper's short pairing code / QR; the handshake succeeds, the
+  long-lived secret / pinned certificate is re-used on every later connection, and any peer that
+  does not present it is rejected; confirm the channel is TLS-only (no plaintext) and the helper
+  binds a local/LAN interface only (never a public interface).
+  (b) **Foreground app switching:** with the helper running, bring VS Code, then Chrome, then
+  Explorer to the foreground on Windows; the iPad must switch its CONTROL layout to the matching
+  app-specific layout (VS Code / Chrome / Explorer) automatically, with no manual mode switch and
+  no mode that is not the §7.1 CONTROL surface. Verify the §7.2 F action sets render with the exact
+  required VS Code labels (`New Window`, `Open Folder`, `Frost Pi`, `SideChatAI`, `Explorer`,
+  `Source Control`, `New Terminal`, `Close Saved`, `Split Editor Right`, `Move to the editor`,
+  `Quick Open Browser Tab`) and the useful Chrome/Explorer sets, and that tapping any of those
+  buttons sends its pre-configured keystroke / shortcut / character sequence through the existing
+  HID path to the focused Windows app. Confirm the project-specific targets (`Frost Pi`,
+  `SideChatAI`, `Quick Open Browser Tab` and similar) are taken from configurable app settings and
+  are NOT hard-coded, so a different project's targets can be used without a code change.
+  (c) **Fallback:** foreground an app that is not one of the configured mappings (unknown exe), and
+  separately stop the helper / drop the channel; in both cases the iPad must show the default
+  generic §7.1 CONTROL layout unchanged, and must never be left on a blank or invalid layout.
+  (d) **BLE input unaffected:** with the helper paired and switching layouts, the whole §5 / §7.1
+  input path must still behave exactly as in items 4–7 — mouse move/tap/scroll, keyboard typing and
+  Direct Input — confirming the helper never carries, sends or overrides HID input and never
+  re-negotiates BLE/HOGP pairing.
+- Ready = all mandatory items (former MVP table 1–14) plus items 9–10 work AND lock-screen
+  acceptance passes.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
@@ -463,9 +575,10 @@ can pass it.)
   `BTRemote/Info.plist` now contains `NSMotionUsageDescription` with exactly the text
   `BTRemote uses device motion to control the mouse in GAME mode.` (the single protected-file
   exception §5.1 J allows).
-- **Unified CONTROL surface (§7.1):** spec-defined only, NOT implemented — the shipped app still
-  has separate TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift`
-  at `3a3ddf2`); implementation must follow this spec commit.
+- **Unified CONTROL surface (§7.1):** implemented — code `fd50ae1` (`feat(ios): add unified
+  CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
+  TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
+  `3a3ddf2`). Physical verification stays pending per §9.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
   HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
@@ -484,9 +597,10 @@ private iOS APIs, ROG Omni reverse engineering, ESP32/RP2040 bridge, USB/Wi-Fi T
 UX/features. (Also parked from earlier: MacBridge idea — verified it never existed; real
 Windows→Mac build path = GitHub Actions macOS runner.)
 
-**Non-goals / future work, not active:** Windows companion / WebSocket transport, dynamic per-app
-panels, OpenClaw, clipboard / voice / state, macros, telemetry, accounts, cloud, process
-monitoring. Current product is exactly: IPAD → BLE HID → WINDOWS.
+**Non-goals / future work, not active:** OpenClaw, clipboard / voice / state, macros, telemetry,
+accounts, cloud, process monitoring. (Windows companion / WebSocket transport and dynamic per-app
+panels are no longer non-goals: they are approved and spec-defined at §7.2, pending implementation.)
+Current product is exactly: IPAD → BLE HID → WINDOWS.
 
 **Tooling constraint:** only the current corporate Qwen model + built-in Qwen Code features; no
 Codex, no Claude, no external/paid models or APIs. The final reviewer (`.qwen/agents/reviewer.md`)
@@ -523,8 +637,11 @@ truly needs more.
 
 ## 13. Future phase
 (Not active — any of these requires a preceding spec commit per the rule at the top of this file.)
-- Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software").
-- Dynamic per-app panels; OpenClaw; clipboard / voice / state integrations.
+- Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software") and
+  dynamic per-app / foreground-aware layouts — the contract is now defined at §7.2 (this spec
+  commit); the active implementation is not yet done and must reference this spec SHA per the
+  spec-first rule and §7.2 I.
+- OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
   BLE-stack implications to be researched), gyro aim (implemented and CI-verified in `1284aca`
   + fixes `28867db`/`aa4443c`, CI run `36203590465`; physical acceptance pending per §5.1 L /
