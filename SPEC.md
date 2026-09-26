@@ -7,8 +7,9 @@ the archive — do not recreate `docs/archive/` or parallel roadmap/architecture
 Rule: any future change to expected behavior, architecture, UX contract, acceptance criteria or
 active scope must change `SPEC.md` before implementation, in a separate spec commit. Example:
 `spec(game): define gyro aim behavior` → then `feat(game): implement gyro aim [spec <sha>]`.
-Implementation commits/PRs must reference the SPEC commit SHA they follow. Pure fixes restoring
-already-specified behavior do not require a spec commit.
+That cycle is now complete: spec `b9caa6d` → `1284aca` + fixes `28867db`/`aa4443c`, merged
+`c89997f`. Implementation commits/PRs must reference the SPEC commit SHA they follow. Pure
+fixes restoring already-specified behavior do not require a spec commit.
 
 ## 1. Product intent
 Make an iPad a programmable Windows input/control surface: the iPad presents itself to a Windows
@@ -71,9 +72,11 @@ sessions — ci-worker zone). The only exception any spec commit may grant is de
 adding `NSMotionUsageDescription` to `BTRemote/Info.plist`; everything else there stays untouched.
 
 ## 5. IMPLEMENTED and CONTRACT-DEFINED behavior
-(§5.1 is a contract only, not implemented. Except for §5.1, code exists in current main as of
-code HEAD `dbe36ab`; Swift compilation was never possible locally — Windows without
-Xcode/swift — so build verification = CI only, see §12.)
+(§5.1 code now EXISTS in current main — implemented per spec `b9caa6d` in `1284aca` with fixes
+`28867db`/`aa4443c`; CI green run `36203590465`; merged `c89997f` via PR #10. The only
+outstanding item for gyro aim is the owner's §9 hardware acceptance, not code. Swift compilation
+was never possible locally — Windows without Xcode/swift — so build verification = CI only,
+see §12.)
 - **BLE pairing:** iPad auto-advertises HID on launch; Windows pairs it as a standard BT
   keyboard+mouse; connection state visible in app (`SetupView`/`NotConnectedView`).
   IMPLEMENTED + MEASURED (user confirmed basic path finger→BLE→Windows + typing on hardware).
@@ -146,9 +149,10 @@ Xcode/swift — so build verification = CI only, see §12.)
 - **Modes UI:** compact switcher GAME | TRACKPAD | TOUCH | DECK + compact status ("BT ● KB ●").
   TOUCH = **EXPERIMENTAL / in development** (absolute digitizer not implemented). IMPLEMENTED.
 
-### 5.1 CONTRACT DEFINED — not implemented (next roadmap stage: GAME gyro aim)
-No Swift code exists for this yet; this subsection only defines the behavior the next
-implementation commit must follow (spec-first rule at the top of this file).
+### 5.1 CONTRACT DEFINED AND IMPLEMENTED (physical acceptance pending)
+Swift code for this now exists in main (implemented in `1284aca`, fixes `28867db`/`aa4443c`,
+CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the contract of record
+(spec-first rule at the top of this file; spec commit `b9caa6d`).
 - **A. Scope:** GAME mode only. Touch remains the default GAME input and its current behavior
   (see "GAME high-fidelity input" above) must stay unchanged. TRACKPAD, TOUCH and DECK are not
   affected.
@@ -246,9 +250,11 @@ Implemented: **modifier hold + combined keycaps after `0bccedc`** — contract d
 (A–G, spec `d1b68d9`); implemented in `dbe36ab`, CI GREEN (run `35652625241`).
 Remaining: the user's physical verification per §9.
 
-Next stage after that: **6. Gyro aim** — contract defined in §5.1 (this spec commit, including
-the single permitted protected-file exception for `NSMotionUsageDescription`), implementation
-not started.
+Stage **6. Gyro aim** is implemented — contract defined in §5.1 (spec `b9caa6d`); code in
+`1284aca` with fixes `28867db`/`aa4443c`; CI green run `36203590465`; merged `c89997f` via
+PR #10. The owner's §9 hardware acceptance for it is still outstanding. The next unstarted
+roadmap stage is therefore **7. Native dictation RU/EN** — per §13 this requires its own
+preceding spec commit (no dictation contract is written here).
 
 ## 9. Acceptance criteria
 (Procedure migrated from `docs/PHYSICAL_TEST.md`. Only the user, on the physical iPad + Windows,
@@ -302,15 +308,16 @@ can pass it.)
 - **TOUCH mode:** EXPERIMENTAL / incomplete — absolute digitizer HID report/descriptor work not
   done; known risk to GATT descriptors/pairing (protected stack); research before implementing;
   feature flag; separate branch; owner/LEAD decision.
-- **Gyro aim:** not implemented (game overlay placeholders: Touch/Gyro/Hybrid, recenter — "later").
-  Behavior contract is now defined in §5.1; implementation and hardware acceptance still
-  pending (`BTRemote/Info.plist` still has no `NSMotionUsageDescription` — that key is the only
+- **Gyro aim:** implemented (SPEC §5.1; commits `1284aca` + fixes `28867db`/`aa4443c`; CI green
+  run `36203590465`; merged `c89997f`) — physical verification pending per §5.1 L / §9.
+  `BTRemote/Info.plist` now contains `NSMotionUsageDescription` with exactly the text
+  `BTRemote uses device motion to control the mouse in GAME mode.` (the single protected-file
   exception §5.1 J allows).
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
-  HEAD `dbe36ab` (CI run `35652625241`; earlier code HEADs: `ac87c61` / run `35642707603`,
-  `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`); any newer Swift edit is
-  unverified without a new CI run.
+  HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
+  `ac87c61` / run `35642707603`, `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`);
+  any newer Swift edit is unverified without a new CI run.
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
 - Imported upstream features out of scope here: iPhone remote surface, macOS Bluetooth Classic
@@ -346,13 +353,17 @@ truly needs more.
   `CODE_SIGNING_ALLOWED=NO`; package Payload/BTRemote.app → zip → BTRemote.ipa) → artifact
   `btr-remote-unsigned-ipa` → install on the iPad via SideStore/Sideloadly (free Apple ID
   re-signing).
-- Git/build values as of 2026-09-21, BEFORE the SOT-cleanup commits (verified live via git/gh):
+- Git/build values as of 2026-09-21, BEFORE the SOT-cleanup commits (dated historical snapshot,
+  verified live via git/gh at that time):
   `main` local == remote == `7b8679d` (docs-only commit on top of code HEAD `0bccedc`); latest
   green CI: run `35561610311` (head `7b8679d`, job build-unsigned, ✓); earlier green:
   `35511332912` (head `0bccedc`). The SOT-cleanup commits (`3734cdf`/`06b8985`/`ebb5009` +
   review refresh) are docs-only on branch `cleanup/source-of-truth` — no Swift changed, so no
   new CI run is required. Newest IPA containing the Win-key fix: `.qwen/tmp/ipa-p4/BTRemote.ipa`
   (from the `0bccedc` build).
+- Current verified facts (2026-09-26): `main` local == `origin/main` == `c89997f`; newest green
+  "Build unsigned IPA" run `36203590465` at head `aa4443c`; newest IPA = that run's artifact
+  `btr-remote-unsigned-ipa`.
 - Never commit: credentials, downloaded IPA/ZIPs, SideStore data, probes (`rawprobe/`), temp
   folders (`.qwen/tmp`), or unrelated scratch.
 - Physical verification (full §9 procedure) still awaits the user's hardware sessions.
@@ -362,7 +373,7 @@ truly needs more.
 - Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software").
 - Dynamic per-app panels; OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
-  BLE-stack implications to be researched), gyro aim (contract already defined in §5.1 —
-  implement from there, no new spec needed), native dictation, modifier combined
-  keycaps / sticky restore (specified in §5/§9; implemented in `ac87c61` + `dbe36ab` —
-  physical verification pending).
+  BLE-stack implications to be researched), gyro aim (implemented and CI-verified in `1284aca`
+  + fixes `28867db`/`aa4443c`, CI run `36203590465`; physical acceptance pending per §5.1 L /
+  §9), native dictation, modifier combined keycaps / sticky restore (specified in §5/§9;
+  implemented in `ac87c61` + `dbe36ab` — physical verification pending).
