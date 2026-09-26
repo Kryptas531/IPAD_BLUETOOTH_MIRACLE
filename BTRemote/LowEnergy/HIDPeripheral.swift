@@ -493,10 +493,12 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
         state = peripheral.state
         _trace("CB state -> \(peripheral.state.rawValue)")
         if peripheral.state == .poweredOn, isHIDServiceAllowed {
-            if isHIDServiceAdded {
-                // Services from before the power cycle are still bound to this CBPeripheralManager
-                // instance, so there is nothing to reinstall: just resume advertising.
-                startAdvertisingNow()
+            if isHIDServiceAdded || batteryServiceObj != nil {
+                // Bluetooth power cycle invalidates the previous GATT registration (including a
+                // partially installed service chain): rebuild the peripheral manager and reinstall
+                // the service chain before advertising again.
+                _resetForRestart()
+                start()
             } else {
                 installServices()
             }
