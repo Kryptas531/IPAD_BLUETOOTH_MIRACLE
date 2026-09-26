@@ -17,6 +17,20 @@ enum AppSettings {
     /// Direct Input release chord, stored as raw values (see ReleaseChord in DirectInputController).
     static let releaseChordKeyKey = "BTRemote.releaseChordKey"
     static let releaseChordModifiersKey = "BTRemote.releaseChordModifiers"
+    // SPEC §7.2 Windows foreground helper link. The user enters the Windows host (private IP),
+    // the port and the helper's self-signed certificate SHA-256 fingerprint; these are read by
+    // WindowsForegroundClient. The 32-byte shared secret is NOT stored here (Keychain only).
+    static let windowsHostKey = "BTRemote.windowsHost"
+    static let windowsPortKey = "BTRemote.windowsPort"
+    static let windowsFingerprintKey = "BTRemote.windowsFingerprint"
+
+    // SPEC §7.2 F: the three project-specific VS Code targets (`Frost Pi`, `SideChatAI`,
+    // `Quick Open Browser Tab`) are user-defined. Each key stores one chord string the user types
+    // in Settings (e.g. "Ctrl+Shift+P"); no target path or keystroke sequence is hard-coded and no
+    // default is supplied. A blank value means "not configured": that keycap sends nothing.
+    static let frostPiShortcutKey = "BTRemote.shortcutFrostPi"
+    static let sideChatAIShortcutKey = "BTRemote.shortcutSideChatAI"
+    static let quickOpenBrowserTabShortcutKey = "BTRemote.shortcutQuickOpenBrowserTab"
 
     static let maxAdvertisedNameLength = 26
 
@@ -30,4 +44,8 @@ enum AppSettings {
     /// Gyro sensitivity: HID mouse counts per radian of device rotation (SPEC §5.1 C).
     static let defaultGyroSensitivity = 180.0
     static let gyroSensitivityRange = 20.0 ... 600.0
+
+    /// Fallback port for the Windows foreground helper WSS link (SPEC §7.2); the user normally
+    /// enters the port printed by the helper. Stored/compared as a string.
+    static let defaultWindowsPort = "8443"
 }

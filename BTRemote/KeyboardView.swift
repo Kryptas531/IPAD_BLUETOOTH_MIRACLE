@@ -55,6 +55,7 @@ struct KeyboardView: View {
     @EnvironmentObject private var lowEnergy: HIDPeripheral
     #if os(iOS)
         @StateObject private var gyro = GyroAimController()
+        @StateObject private var windows = WindowsForegroundClient.shared
         @Environment(\.scenePhase) private var scenePhase
     #endif
     @State private var text = ""
@@ -236,26 +237,49 @@ struct KeyboardView: View {
     /// and below (portrait), so the pad keeps the dominant share of the surface (SPEC §7.1 B/F).
     @ViewBuilder
     private func controlSurface(landscape: Bool) -> some View {
+        // SPEC §7.2: when the Windows helper reports a known application, render that app's
+        // configured action set (AppLayouts) with the existing KeyCap handling; otherwise keep the
+        // generic §7.1 quick set (unknown token / no link / disconnect -> generic fallback).
+        // The action set may be longer than the generic 8-key quick set (VS Code has 11 actions),
+        // so split the rendered keys into two halves around the central pad instead of a fixed
+        // prefix(4)+suffix(4); a fixed 4+4 silently dropped any key beyond the eighth. For the
+        // 8-key generic set the split stays 4+4, so the generic layout is unchanged.
+        let keys = appActionKeys
+        let split = (keys.count + 1) / 2
+        let leadingKeys = Array(keys.prefix(split))
+        let trailingKeys = Array(keys.dropFirst(split))
         if landscape {
             VStack(spacing: 4) {
                 controlBar
                     .padding(.horizontal, 8)
                 HStack(spacing: 4) {
-                    keyColumn(Array(quickKeys.prefix(4)))
+                    keyColumn(leadingKeys)
                     padSurface
-                    keyColumn(Array(quickKeys.suffix(4)))
+                    keyColumn(trailingKeys)
                 }
                 entryControls
             }
         } else {
             VStack(spacing: 4) {
                 controlBar
-                keyRow(Array(quickKeys.prefix(4)))
+                keyRow(leadingKeys)
                 padSurface
-                keyRow(Array(quickKeys.suffix(4)))
+                keyRow(trailingKeys)
                 entryControls
             }
         }
+    }
+
+    /// SPEC §7.2: the dynamic action set for the currently-reported Windows application, or the
+    /// generic §7.1 quick set when no application is known (client disconnected / unknown token).
+    /// The returned keycaps are rendered with the unchanged `keyRow`/`keyColumn`/`keyCapButton`
+    /// dispatch, so no new keycodes or HID reports are introduced.
+    private var appActionKeys: [KeyCap] {
+        #if os(iOS)
+            return AppLayouts.set(for: windows.token)?.keys ?? quickKeys
+        #else
+            return quickKeys
+        #endif
     }
 
     /// The live trackpad with the single open temporary surface drawn over it (SPEC §7.1 C/E).
@@ -641,6 +665,15 @@ struct KeyboardView: View {
             if case let .modifier(mod) = key.action { return mods.contains(mod) }
             return false
         }()
+        // SPEC §7.2 F: resolve a user-defined target's chord once here (pure read + parse, no HID
+        // side effects at render time) so an unconfigured target renders as a disabled keycap and
+        // a configured one reuses the existing single-chord `HIDInput.keyReports` send path.
+        let userReports: [KeyboardReport] = {
+            if case let .userTarget(settingsKey) = key.action {
+                return UserTargets.keyReports(forChord: UserTargets.chord(forSettingsKey: settingsKey))
+            }
+            return []
+        }()
         switch key.action {
         case let .key(code):
             Button {
@@ -683,6 +716,31 @@ struct KeyboardView: View {
                     .foregroundColor(.primary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(key.accessibility)
+        case let .userTarget(settingsKey):
+            // SPEC §7.2 F: the concrete keystroke sequence for a project-specific target
+            // (`Frost Pi`, `SideChatAI`, `Quick Open Browser Tab`, or any other the user adds) is
+            // configured in app settings, never hard-coded. Pressing the keycap sends exactly the
+            // existing HID key reports for the single chord the user entered. A blank or
+            // unparseable chord sends nothing and the keycap is shown disabled.
+            Button {
+                Haptics.tap()
+                guard !userReports.isEmpty else { return }
+                typist.send = hid.sendKeyboard
+                typist.enqueue(userReports)
+            } label: {
+                VStack(spacing: 0) {
+                    keyLabel(key.label)
+                    if userReports.isEmpty {
+                        Text("set in Settings").font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .disabled(userReports.isEmpty)
             .accessibilityLabel(key.accessibility)
         case let .consumer(code):
             Button {
@@ -831,7 +889,9 @@ struct KeyboardView: View {
     }
 }
 
-private struct KeyCap {
+/// SPEC §7.2: the app-specific action model (AppLayouts in WindowsForeground.swift) reuses the
+/// existing KeyCap dispatch below, so KeyCap must be module-visible rather than private.
+struct KeyCap {
     enum Label {
         case symbol(String)
         case text(LocalizedStringKey)
@@ -843,6 +903,11 @@ private struct KeyCap {
         case modifier(KeyboardModifiers)
         case combo(Keycode, KeyboardModifiers)
         case consumer(ConsumerKey)
+        /// SPEC §7.2 F: a user-defined target. The associated value is the **app-settings key**
+        /// that holds the chord the user typed for that target (e.g. `Ctrl+Shift+P`), never a
+        /// hard-coded path or keystroke sequence. An empty/blank stored value means the target is
+        /// not configured and the keycap is disabled (sends nothing).
+        case userTarget(String)
     }
 
     let label: Label
