@@ -479,3 +479,31 @@ Never claim:
 - CI GREEN based on an older commit;
 - delivered unless PR/merge state was verified.
 
+
+==================================================
+PI MAIN SHELL / PROVIDER POLICY
+==================================================
+
+- The MAIN Pi orchestrator is a Pi session, not a Qwen Code session.
+- Its operating instructions are AGENTS.md, SPEC.md, and the active `.pi/` prompt.
+- `QWEN.md` is provider-specific repository evidence only.
+- Do NOT adopt Qwen Code-specific shell, command-runner, provider, session, or tooling restrictions in the MAIN Pi orchestrator.
+- Apply Qwen Code-specific rules from `QWEN.md` only when Qwen Code itself is actually being used.
+
+- The MAIN orchestrator should directly use its own available shell for orchestration work:
+  git inspection, GitHub CLI, CI observation, branch/PR state, safe repository inspection,
+  and other coordination commands.
+- Do not delegate a simple shell orchestration operation to a subagent.
+- Do not avoid the available shell merely because a Qwen-specific instruction mentions a different shell environment.
+- The MAIN Pi session is not bound by Qwen Code `run_shell_command` / cmd.exe conventions.
+
+CI WAIT POLICY:
+
+- Waiting for GitHub Actions is an orchestrator responsibility.
+- When an existing GitHub Actions run must finish, prefer:
+  `gh run watch <run-id> --exit-status --interval 10`
+- Do not implement CI waiting as `sleep` plus repeated `gh run view` polling when `gh run watch` is available.
+- Do not spawn a builder/reviewer merely to wait for CI.
+- After `gh run watch` returns, inspect the resulting exact-HEAD CI state and continue the autonomous flow.
+- PowerShell.exe is not required to run `gh run watch`; use the shell already available to the MAIN Pi session.
+
