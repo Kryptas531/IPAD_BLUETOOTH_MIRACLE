@@ -364,12 +364,18 @@ actions moves.
   physical verification pending" until the owner runs the §9 checks in both orientations. No
   dictation work is included here (still §8 stage 5 / §13).
 
-## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED, NOT YET IMPLEMENTED
+## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED; IMPLEMENTED IN `c8babce` (CI build and physical acceptance pending)
 Spec-first contract for the owner-approved optional Windows helper that tells the iPad which
 application is in the foreground so the iPad can present an app-specific CONTROL layout. This is
 the previously non-goaled "Windows companion / WebSocket transport" and "dynamic per-app panels"
 work (§11, §13), now approved and specified. Defined at base `482155b`; no Swift, README or other
-file is changed by this spec commit — the implementation commit must reference this spec SHA.
+file was changed by that spec commit. The implementation is committed in `c8babce`
+(`feat(windows): configure foreground app layouts [spec fb77782]`): the §7.2 F configurability gap
+found by the independent review is closed — the executable→layout map and every
+layout's labelled actions are one user-editable JSON document instead of hard-coded Swift action
+sets, and the Swift 6 strict-concurrency problem in `AppLayouts` is gone. The code being committed
+does not mean it is verified: no CI job has built the Swift client yet and no hardware test has been
+run (§7.2 I, §9 item 10).
 
 Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only input channel.**
 The helper is out-of-band UI signalling only. It reports a foreground-app identity so the iPad knows
@@ -384,18 +390,93 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   layout. Additive convenience only; no shipped feature, input path, HID report or key may be
   removed or changed to accommodate it.
 - **B. Secure local communication.** Helper and iPad talk only over the local network (same LAN /
-  Wi-Fi); the helper must bind to a local interface and must never listen on a public/Internet
-  interface. The channel is authenticated and encrypted (TLS). No plaintext transport is permitted.
-  The channel is **unidirectional for control**: the helper only emits `foreground-changed →
-  <identity>` notifications to the iPad; it must never send HID reports or command the iPad to press
-  anything. All input continues to flow iPad → Windows over the existing BLE HID path.
-- **C. Secure local pairing.** One-time local pairing between the helper and the target iPad, done
-  on the same LAN. The helper surfaces a short pairing code (or QR) that the user enters on the
-  iPad (mirrors the existing "pair the Bluetooth device" flow conceptually, §5 / §9). A successful
-  handshake establishes a long-lived shared secret / pinned certificate, re-used on every later
-  connection; the endpoint must reject any peer that does not present it. Re-pairing requires
-  repeating the local handshake. The pairing secret, tokens and certificates are never committed to
-  git (the §12 "never commit credentials" rule applies).
+  Wi-Fi). The helper binds exactly one concrete, operational, non-tunnel **private/local IPv4
+  unicast** address (loopback, RFC 1918, or link-local) on the configured port (default **8443**,
+  optional first command-line argument), and refuses to start when no such interface exists; it must
+  never listen on a public/Internet-facing, wildcard (`0.0.0.0` / `::`) or tunnel address.
+  The channel is encrypted and authenticated end to end over **TLS** carrying **WebSocket** text
+  frames: the iPad connects to `wss://<private-IPv4>:<port>` and the helper completes the RFC 6455
+  server handshake (Sec-WebSocket-Key/Accept) over the established TLS stream. No plaintext
+  transport exists anywhere in the helper and none is permitted.
+  The TLS endpoint uses a runtime-generated **self-signed** certificate (`CN=ipad-foreground-helper`,
+  RSA 2048, SHA-256, 30 days), persisted so the same key pair — and therefore the same **SHA-256
+  certificate fingerprint** — survives helper restarts. The iPad trust-on-first-use **pins** that
+  fingerprint: it accepts the certificate only when the SHA-256 digest of the leaf certificate
+  equals the fingerprint the helper printed and the user entered in iPad settings, and cancels the
+  authentication challenge otherwise. If the persisted certificate becomes unusable the helper
+  regenerates one and the iPad must re-pin the new fingerprint.
+  **Auth before notifications:** the helper sends no application data whatsoever until the
+  connecting device has proved possession of the credential defined in C. After that exchange the
+  only message it ever sends is the single notification
+  `{"type":"foreground-changed","identity":"<token>"}` (tokens `vscode` | `chrome` | `explorer` |
+  `generic`, §D/§E; the helper re-sends it only when the resolved identity changes, polling the
+  foreground window every 350 ms). It never sends HID reports, keystrokes, shortcuts, commands,
+  window titles, executable paths or arbitrary process data.
+  The channel is **unidirectional for control**: one helper instance serves one paired iPad at a
+  time, and the link never carries input in either direction. All input continues to flow
+  iPad → Windows over the existing BLE HID path.
+- **C. Secure local pairing (pair → secret → reconnect).** One-time local pairing between the
+  helper and the target iPad, done on the same LAN. The wire exchange is exactly the following, and
+  nothing in the implementation may invent other message types or fields:
+  1. The helper binds its local endpoint, prints the certificate **SHA-256 fingerprint** and a
+     cryptographically random **six-digit one-time pairing code** (`000000`–`999999`) on the local
+     Windows console, and waits for the iPad. A code is only meaningful while no valid stored secret
+     exists; the auth mode is fixed at helper start, so the console output and the credential the
+     server will accept can never disagree.
+  2. The user enters the Windows private address, port, fingerprint and code in the iPad's
+     **Windows helper** settings section and taps **Connect**. The iPad opens the TLS/WebSocket
+     connection and sends its credential **first**, the exact frame
+     `{"type":"pair","code":"<code>"}`, inside the helper's 5-second window (one frame, ≤64 bytes).
+  3. On a successful pair the helper generates the long-lived **256-bit (32-byte) device secret**,
+     persists it DPAPI-protected for the current Windows user
+     (`%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin`, `CryptProtectData`, never as
+     plaintext), and hands it to the iPad **once**, over the already-established TLS channel, as
+     `{"type":"paired","secret":"<base64>"}`. The one-time code is now spent and is never accepted or
+     reprinted.
+  4. On every later connection (helper restart, Wi-Fi drop, iPad reboot, or a reconnect after the
+     helper lost the previous socket) the iPad authenticates with
+     `{"type":"reconnect","secret":"<base64>"}` and the helper replies `{"type":"reconnected"}` — no
+     new code is issued, entered or accepted. A real 32-byte secret base64-encodes to 44 characters,
+     so that exact frame is 76 bytes; the helper therefore reads one bounded authentication frame of
+     at most `MaxAuthFrameBytes` = 128 bytes (bounded allocation, no unbounded read). The helper
+     verifies the credential against its own expected request with a fixed-time comparison, so the
+     device never has to re-enter a code the helper no longer prints; a device reconnecting on a
+     fresh socket replaces the stale one.
+  The endpoint rejects any peer that does not present that credential: a connection that fails TLS,
+  the WebSocket handshake, or credential verification is closed without a single byte of payload and
+  leaves any previously authenticated session untouched.
+  **Re-pairing recovery (read this before telling the user to restart the helper).** While a valid
+  32-byte secret is persisted on Windows, restarting the helper does NOT issue or print a fresh
+  pairing code: the helper stays in reconnect mode and only accepts the stored secret, so a
+  restarted helper that says "device secret already stored; waiting for the iPad to reconnect with it
+  (no new pairing code is issued)" is behaving correctly. To pair a *different* iPad, the user must
+  tap **"Unpair and forget this helper"** on the iPad (which clears its Keychain secret) AND delete
+  only `%LOCALAPPDATA%\iPadForegroundHelper\device-secret.bin` on Windows, then restart the helper;
+  it then prints a fresh one-time code. Keep `%LOCALAPPDATA%\iPadForegroundHelper\tls-cert.pfx` in
+  place so the pinned certificate and its fingerprint survive the re-pair. If that certificate is
+  deliberately removed or regenerated, the helper prints a new SHA-256 fingerprint and it must be
+  re-entered on the iPad. Until the device-secret file has been removed and the helper restarted, a
+  new/unpaired iPad cannot pair at all.
+  The iPad keeps the helper-issued 32-byte secret in the **iOS Keychain only** (generic password,
+  service `io.github.jqssun.btremote.windows-foreground`, account `device-secret`,
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`); host, port and fingerprint are ordinary app
+  settings and the secret is never stored with them. "Unpair and forget this helper" clears it.
+  Storage is **fail-closed**: if the secret cannot be written the iPad reports an error and stays on
+  the §7.1 generic layout instead of claiming a link it could not re-authenticate later.
+  The one-time pairing code is deliberately displayed to the user, not hidden: `Program.Main` prints
+  it on the local Windows console as `[windows-foreground] one-time pairing code: <code>` so the user
+  can type it into the iPad. It is a transient user-interface affordance, not a stored credential:
+  it is never persisted (no file, no UserDefaults, no Keychain) and never sent to any third party or
+  to any non-local destination. The long-lived device secret is never printed anywhere (the helper
+  only says that a secret was issued and stored); it crosses the wire exactly once, inside the TLS
+  `{"type":"paired",...}` frame, and afterwards exists only in the helper's DPAPI-protected file and
+  the iPad Keychain. Neither the code nor the secret is ever committed to git (the §12 "never commit
+  credentials" rule applies).
+  This clause records the exact wire contract both sides implement
+  (`companion/WindowsForeground/`, `BTRemote/WindowsForeground.swift`); it does **not** certify
+  verification — the Swift client has never been compiled (no Xcode/swift on this Windows machine),
+  so implementation claims stay CI-only per I, and physical acceptance stays outstanding
+  (§9 item 10).
   The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
   when it actually pairs with or connects to the helper — never at launch and never for the plain
   §7.1 path. If the user denies that permission, the app behaves exactly as §7.1 defines (generic
@@ -405,7 +486,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   identify apps by window title (titles are user- and locale-editable and are not trusted for
   identity). The iPad maps a known executable to a layout profile. Canonical mappings defined here:
   `Code.exe` → VS Code layout, `chrome.exe` → Chrome layout, `explorer.exe` → Explorer layout.
-  Matching is strictly by configured executable file name/path, never by title.
+  Matching is strictly by configured executable file name/path, never by title. That mapping is
+  **user data, not code**: the helper reads it from the JSON layout document described in F (the
+  file it creates at `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json`), and the three canonical
+  mappings above are that document's shipped defaults.
 - **E. Unknown / disconnected fallback.** If the foreground executable is not one of the configured
   mappings (an unknown app), or the helper is not running / not paired / the channel is down, the
   iPad must show the default generic CONTROL layout from §7.1, unchanged. Losing the helper
@@ -421,6 +505,19 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   **data / user-configurable**, so a new app profile or a different project's targets can be added
   without a code change; a layout may only reference sequences that already produce existing HID
   reports.
+  Concretely, that data is **one JSON document** the user can edit without touching any source:
+  `{ "profiles": [ { "id", "title", "executables": ["Some.exe"], "actions": [ { "label",
+  "chord" | "sequence" | "text" | "settings" } ] } ] }`. A `chord` is one chord (`"Ctrl+Shift+P"`,
+  `"F5"`), a `sequence` is an ordered list of chords (`["Ctrl+K", "Ctrl+O"]`), `text` is a literal
+  string/path to type, and `settings` names the app-settings key holding the user's own chord.
+  All four targets dispatch through the existing `HIDInput`/`KeyTypist` keyboard path, so no new
+  keycode or report type is possible; an unconfigured or unparseable target sends nothing and its
+  button stays disabled. The Windows helper reads the same document (it creates
+  `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json` from the shipped defaults on first run) to
+  decide which executables are "known", and the iPad edits the matching copy in
+  **Settings → App layouts (JSON)**, with **Restore shipped layouts** to get the shipped defaults
+  back; the six project/folder targets below stay editable in their own Settings fields. The shipped
+  defaults are listed verbatim below and stay unchanged.
   - **VS Code layout — required action set (verbatim, exact labels):** `New Window`, `Open Folder`,
     `Frost Pi`, `SideChatAI`, `Explorer`, `Source Control`, `New Terminal`, `Close Saved`,
     `Split Editor Right`, `Move to the editor`, `Quick Open Browser Tab`. These labels must appear
@@ -428,7 +525,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
     project-specific target are **user-defined targets**: each is ultimately a keystroke / shortcut /
     command sequence that the user configures (e.g. a VS Code command palette entry, a task, a
     folder path, an extension shortcut). Their concrete keystroke target must be **configurable in
-    app settings**, never hard-coded, so the project can change without a code change.
+    app settings**, never hard-coded, so the project can change without a code change. In the shipped
+    document these six actions are `"settings"` targets, i.e. the user types the chord (or typed
+    text/path) in the matching Settings field; the three VS Code targets and the three Explorer
+    targets all stay user-configurable.
   - **Chrome layout — useful action set:** `New Tab` (Ctrl+T), `Close Tab` (Ctrl+W), `Reload`
     (Ctrl+R), `Focus Address Bar` (Ctrl+L), `Back` (Alt+←), `Forward` (Alt+→), `History` (Ctrl+H),
     `Show Bookmarks` (Ctrl+Shift+B), `Full Screen` (F11).
@@ -441,9 +541,12 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   localhost/LAN-only, encrypted and mutually authenticated. The helper must not auto-start into a
   state that overrides the user's §7.1 default layout without a completed pairing (clause E).
 - **H. Relationship to existing scope.** This makes the previously non-goaled "Windows companion /
-  WebSocket transport" and "dynamic per-app panels" items (§11, §13) **approved and specified, but
-  not implemented**. The core product line stays exactly "IPAD → BLE HID → WINDOWS"; the helper sits
-  beside that path and only selects which layout the iPad presents, it never carries input.
+  WebSocket transport" and "dynamic per-app panels" items (§11, §13) **approved, specified and
+  implemented in source — but not verified**: the C# helper builds and its dependency-free tests
+  pass on this Windows machine, the Swift client has never been compiled (no Xcode/swift here) and
+  no §7.2 behaviour has been tested on real hardware. The core product line stays exactly
+  "IPAD → BLE HID → WINDOWS"; the helper sits beside that path and only selects which layout the
+  iPad presents, it never carries input.
 - **I. Verification / limits.** Implementation may claim CI only. Foreground-detection correctness,
   secure pairing, per-app layout correctness, the iOS local-network permission prompt (requested
   only at pairing/connect time) and the unknown/disconnected/denied-permission fallback all stay
@@ -468,9 +571,14 @@ PR #10. The owner's §9 hardware acceptance for it is still outstanding. Stage *
 CONTROL surface** is implemented — contract defined in §7.1 (spec `97d459b`); code in `fd50ae1`
 (`feat(ios): add unified CONTROL workspace`); merged `482155b` via PR #17.
 The next bounded active stage is **5. Windows helper and foreground-aware layouts (§7.2)** — the
-companion app, secure local pairing and per-app/foreground layout contract are now defined by this
-spec commit; the implementation is **not yet done** and the implementation commit must reference
-this spec SHA (§7.2 I). Later unstarted roadmap stages (native dictation RU/EN, feedback,
+companion app, secure local pairing and per-app/foreground layout contract are defined by spec
+commit `fb77782` and implemented by commit `c8babce` (`feat(windows): configure foreground app
+layouts [spec fb77782]`): Windows C# helper + iPad `BTRemote/WindowsForeground.swift` + the
+user-editable JSON layout document from §7.2 F. Nothing in §7.2 may be called verified:
+the C# helper builds and its dependency-free tests pass locally (67 checks), Swift cannot be
+compiled on this Windows machine so the iOS client is unbuilt and its CI build is still pending,
+and §9 item 10 stays outstanding.
+Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
 dictation contract is written here.
 
@@ -544,8 +652,11 @@ can pass it.)
   `Quick Open Browser Tab`) and the useful Chrome/Explorer sets, and that tapping any of those
   buttons sends its pre-configured keystroke / shortcut / character sequence through the existing
   HID path to the focused Windows app. Confirm the project-specific targets (`Frost Pi`,
-  `SideChatAI`, `Quick Open Browser Tab` and similar) are taken from configurable app settings and
-  are NOT hard-coded, so a different project's targets can be used without a code change.
+  `SideChatAI`, `Quick Open Browser Tab` and similar) are taken from the configurable layout
+  document / app settings and are NOT hard-coded, so a different project's targets (and a new
+  executable→layout mapping, e.g. a `Cursor.exe` profile) can be used without a code change: edit
+  the helper's `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json` and copy the same JSON into the
+  iPad's **Settings → App layouts (JSON)**, then check the layout changes again.
   (c) **Fallback:** foreground an app that is not one of the configured mappings (unknown exe), and
   separately stop the helper / drop the channel; in both cases the iPad must show the default
   generic §7.1 CONTROL layout unchanged, and must never be left on a blank or invalid layout.
@@ -594,10 +705,23 @@ can pass it.)
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
   `3a3ddf2`). Physical verification stays pending per §9.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
+- **Windows helper and foreground-aware layouts (§7.2):** implemented and committed in `c8babce`,
+  **not verified**.
+  The C# helper builds with `dotnet build` and its dependency-free tests pass locally
+  (`ALL TESTS PASSED`, 67 checks). The Swift side (`BTRemote/WindowsForeground.swift`,
+  `BTRemote/KeyboardView.swift`, `BTRemote/AppSettings.swift`, `BTRemote/SettingsView.swift`) has
+  never been compiled — there is no Xcode/swift on this machine — so its build must be confirmed by
+  the macOS GitHub Actions job and its behaviour by the owner's §9 item 10 hardware session. Do not
+  describe §7.2 as passed, and do not treat the previously hard-coded VS Code / Chrome / Explorer
+  action sets or the fixed executable map as finished work: both are now the user-editable JSON
+  document (§7.2 F).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
   HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
   `ac87c61` / run `35642707603`, `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`);
-  any newer Swift edit is unverified without a new CI run.
+  any newer Swift edit is unverified without a new CI run — which includes the §7.2 F work in
+  `BTRemote/WindowsForeground.swift` / `KeyboardView.swift` / `AppSettings.swift` /
+  `SettingsView.swift` (committed in `c8babce`, never built). The C# companion builds and its tests
+  pass locally (`dotnet`, .NET 8, no NuGet).
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
 - Imported upstream features out of scope here: iPhone remote surface, macOS Bluetooth Classic
@@ -652,12 +776,14 @@ truly needs more.
 ## 13. Future phase
 (Not active — any of these requires a preceding spec commit per the rule at the top of this file.)
 - Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software") and
-  dynamic per-app / foreground-aware layouts — the contract is now defined at §7.2 (this spec
-  commit); the active implementation is not yet done and must reference this spec SHA per the
-  spec-first rule and §7.2 I.
+  dynamic per-app / foreground-aware layouts — the contract is defined at §7.2 (spec commits
+  `b751488` / `fb77782`) and the implementation is committed in `c8babce`; that implementation is
+  still unverified — the Swift client has never been built and the §9 item 10 hardware checks are
+  outstanding.
 - OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
   BLE-stack implications to be researched), gyro aim (implemented and CI-verified in `1284aca`
   + fixes `28867db`/`aa4443c`, CI run `36203590465`; physical acceptance pending per §5.1 L /
   §9), native dictation, modifier combined keycaps / sticky restore (specified in §5/§9;
-  implemented in `ac87c61` + `dbe36ab` — physical verification pending).
+  implemented in `ac87c61` + `dbe36ab` — physical verification pending), the remaining §7.2 items
+  (CI build of the Swift client and the §9 item 10 hardware checks).

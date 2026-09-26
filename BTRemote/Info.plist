@@ -28,6 +28,8 @@
 	<string>BT Remote uses Bluetooth as a keyboard and mouse.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>BTRemote uses device motion to control the mouse in GAME mode.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>BTRemote connects to your paired Windows PC on the local network to show app-specific controls.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

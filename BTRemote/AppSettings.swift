@@ -17,6 +17,31 @@ enum AppSettings {
     /// Direct Input release chord, stored as raw values (see ReleaseChord in DirectInputController).
     static let releaseChordKeyKey = "BTRemote.releaseChordKey"
     static let releaseChordModifiersKey = "BTRemote.releaseChordModifiers"
+    // SPEC §7.2 Windows foreground helper link. The user enters the Windows host (private IP),
+    // the port and the helper's self-signed certificate SHA-256 fingerprint; these are read by
+    // WindowsForegroundClient. The 32-byte shared secret is NOT stored here (Keychain only).
+    static let windowsHostKey = "BTRemote.windowsHost"
+    static let windowsPortKey = "BTRemote.windowsPort"
+    static let windowsFingerprintKey = "BTRemote.windowsFingerprint"
+
+    // SPEC §7.2 F: the project-specific targets (`Frost Pi`, `SideChatAI`,
+    // `Quick Open Browser Tab`, `This PC`, `Documents`, `Downloads`) are user-defined. Each key
+    // stores one chord string the user types in Settings (e.g. "Ctrl+Shift+P"); no target path or
+    // keystroke sequence is hard-coded and no default is supplied. A blank value means "not
+    // configured": that action sends nothing. These six keys are the `"settings"` targets of the
+    // shipped layout document (`layoutProfilesKey`).
+    static let frostPiShortcutKey = "BTRemote.shortcutFrostPi"
+    static let sideChatAIShortcutKey = "BTRemote.shortcutSideChatAI"
+    static let quickOpenBrowserTabShortcutKey = "BTRemote.shortcutQuickOpenBrowserTab"
+    static let thisPCShortcutKey = "BTRemote.shortcutThisPC"
+    static let documentsShortcutKey = "BTRemote.shortcutDocuments"
+    static let downloadsShortcutKey = "BTRemote.shortcutDownloads"
+
+    /// SPEC §7.2 F: the user-editable JSON layout document (executable→layout mappings plus each
+    /// layout's labelled actions). Holds the text exactly as the Windows helper's
+    /// `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json`; blank/unparsable means "use the shipped
+    /// defaults" (`AppLayouts.defaultJSON`).
+    static let layoutProfilesKey = "BTRemote.layoutProfilesJSON"
 
     static let maxAdvertisedNameLength = 26
 
@@ -30,4 +55,8 @@ enum AppSettings {
     /// Gyro sensitivity: HID mouse counts per radian of device rotation (SPEC §5.1 C).
     static let defaultGyroSensitivity = 180.0
     static let gyroSensitivityRange = 20.0 ... 600.0
+
+    /// Fallback port for the Windows foreground helper WSS link (SPEC §7.2); the user normally
+    /// enters the port printed by the helper. Stored/compared as a string.
+    static let defaultWindowsPort = "8443"
 }

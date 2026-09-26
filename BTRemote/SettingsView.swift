@@ -57,6 +57,12 @@ struct SettingsView: View {
                     Label(L10n.Settings.sourceCode, systemImage: "chevron.left.forwardslash.chevron.right")
                 }
             }
+            #if os(iOS)
+                // SPEC §7.2: Windows foreground-helper link + the three user-defined app-layout
+                // shortcuts. iOS only; the helper never carries HID input, so the existing
+                // sections above and the fields below keep working unchanged.
+                WindowsForegroundSettingsView()
+            #endif
             if developerMode, hid.isActive { batterySection }
             resetSection
         }

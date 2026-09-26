@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- No NuGet test framework: focused pure tests only, run with
+         `dotnet run` on this project. Tests compile the production file
+         directly (smallest coherent wiring; the helper target is
+         Windows-only and the tested part is pure managed code). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../WindowsForeground/ForegroundMapping.cs" Link="ForegroundMapping.cs" />
+    <Compile Include="../WindowsForeground/ForegroundServer.cs" Link="ForegroundServer.cs" />
+  </ItemGroup>
+
+</Project>

@@ -55,6 +55,7 @@ struct KeyboardView: View {
     @EnvironmentObject private var lowEnergy: HIDPeripheral
     #if os(iOS)
         @StateObject private var gyro = GyroAimController()
+        @StateObject private var windows = WindowsForegroundClient.shared
         @Environment(\.scenePhase) private var scenePhase
     #endif
     @State private var text = ""
@@ -236,26 +237,50 @@ struct KeyboardView: View {
     /// and below (portrait), so the pad keeps the dominant share of the surface (SPEC §7.1 B/F).
     @ViewBuilder
     private func controlSurface(landscape: Bool) -> some View {
+        // SPEC §7.2: when the Windows helper reports a known application, render that app's
+        // configured action set (AppLayouts) with the existing KeyCap handling; otherwise keep the
+        // generic §7.1 quick set (unknown token / no link / disconnect -> generic fallback).
+        // The action set may be longer than the generic 8-key quick set (VS Code has 11 actions),
+        // so split the rendered keys into two halves around the central pad instead of a fixed
+        // prefix(4)+suffix(4); a fixed 4+4 silently dropped any key beyond the eighth. For the
+        // 8-key generic set the split stays 4+4, so the generic layout is unchanged.
+        let keys = appActionKeys
+        let split = (keys.count + 1) / 2
+        let leadingKeys = Array(keys.prefix(split))
+        let trailingKeys = Array(keys.dropFirst(split))
         if landscape {
             VStack(spacing: 4) {
                 controlBar
                     .padding(.horizontal, 8)
                 HStack(spacing: 4) {
-                    keyColumn(Array(quickKeys.prefix(4)))
+                    keyColumn(leadingKeys)
                     padSurface
-                    keyColumn(Array(quickKeys.suffix(4)))
+                    keyColumn(trailingKeys)
                 }
                 entryControls
             }
         } else {
             VStack(spacing: 4) {
                 controlBar
-                keyRow(Array(quickKeys.prefix(4)))
+                keyRow(leadingKeys)
                 padSurface
-                keyRow(Array(quickKeys.suffix(4)))
+                keyRow(trailingKeys)
                 entryControls
             }
         }
+    }
+
+    /// SPEC §7.2: the dynamic action set for the currently-reported Windows application, or the
+    /// SPEC §7.2: the dynamic action set for the currently-reported Windows application, or the
+    /// generic §7.1 quick set when no application is known (client disconnected / unknown identity).
+    /// The returned keycaps are rendered with the unchanged `keyRow`/`keyColumn`/`keyCapButton`
+    /// dispatch, so no new keycodes or HID reports are introduced.
+    private var appActionKeys: [KeyCap] {
+        #if os(iOS)
+            return AppLayouts.set(for: windows.identity)?.keys ?? quickKeys
+        #else
+            return quickKeys
+        #endif
     }
 
     /// The live trackpad with the single open temporary surface drawn over it (SPEC §7.1 C/E).
@@ -641,6 +666,15 @@ struct KeyboardView: View {
             if case let .modifier(mod) = key.action { return mods.contains(mod) }
             return false
         }()
+        // SPEC §7.2 F: resolve a data-configured action's target once here (pure read + parse, no
+        // HID side effects at render time) so an unconfigured action renders as a disabled keycap
+        // and a configured one reuses the existing `HIDInput.keyReports` + `KeyTypist` send path.
+        let dataReports: [KeyboardReport] = {
+            if case let .layout(action) = key.action {
+                return UserTargets.keyReports(for: action)
+            }
+            return []
+        }()
         switch key.action {
         case let .key(code):
             Button {
@@ -684,6 +718,31 @@ struct KeyboardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(key.accessibility)
+        case .layout:
+            // SPEC §7.2 F: the concrete chord, chord sequence or typed text a user-configured
+            // action sends is data from the layout document, never hard-coded. Pressing the keycap
+            // sends exactly the existing HID key reports for that target through the existing
+            // `KeyTypist` pacing. An unconfigured or unparseable target sends nothing and the
+            // keycap is shown disabled.
+            Button {
+                Haptics.tap()
+                guard !dataReports.isEmpty else { return }
+                typist.send = hid.sendKeyboard
+                typist.enqueue(dataReports)
+            } label: {
+                VStack(spacing: 0) {
+                    keyLabel(key.label)
+                    if dataReports.isEmpty {
+                        Text("set in Settings").font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .disabled(dataReports.isEmpty)
+            .accessibilityLabel(key.accessibility)
         case let .consumer(code):
             Button {
                 Haptics.tap()
@@ -704,6 +763,8 @@ struct KeyboardView: View {
         switch label {
         case let .symbol(name): Image(systemName: name).font(.body)
         case let .text(value): Text(value).font(.footnote).lineLimit(1).minimumScaleFactor(0.5)
+        // SPEC §7.2 F: a user-configured label is the user's own text, shown verbatim.
+        case let .verbatim(value): Text(verbatim: value).font(.footnote).lineLimit(1).minimumScaleFactor(0.5)
         case .blank: Color.clear
         }
     }
@@ -831,10 +892,18 @@ struct KeyboardView: View {
     }
 }
 
-private struct KeyCap {
+/// SPEC §7.2: the app-specific action model (AppLayouts in WindowsForeground.swift) reuses the
+/// existing KeyCap dispatch below, so KeyCap must be module-visible rather than private. A
+/// data-configured action carries the decoded `LayoutAction` (SPEC §7.2 F); its label is the user's
+/// own text, rendered verbatim.
+struct KeyCap {
     enum Label {
         case symbol(String)
         case text(LocalizedStringKey)
+        /// SPEC §7.2 F: a label that comes from the user's layout document, not from a
+        /// localization table, so it is displayed verbatim (and `String` keeps the struct free of
+        /// non-Sendable stored properties).
+        case verbatim(String)
         case blank
     }
 
@@ -843,6 +912,12 @@ private struct KeyCap {
         case modifier(KeyboardModifiers)
         case combo(Keycode, KeyboardModifiers)
         case consumer(ConsumerKey)
+        /// SPEC §7.2 F: a user-configured action from the layout document. It carries the decoded
+        /// target (one chord, an ordered chord sequence, typed text/path, or the app-settings key
+        /// holding the user's chord for one of the six project/folder targets); no keystroke
+        /// sequence is hard-coded and every report reuses the existing `HIDInput`/`KeyTypist`
+        /// keyboard path, so no new keycode or HID report type is introduced.
+        case layout(LayoutAction)
     }
 
     let label: Label
