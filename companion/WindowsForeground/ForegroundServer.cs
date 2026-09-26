@@ -33,6 +33,7 @@
 //     fixed notification produced by ForegroundMapping — never HID commands,
 //     window titles, executable paths or arbitrary process data.
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -65,6 +66,13 @@ namespace WindowsForeground
     {
         // RFC 6455 §1.3 magic GUID for the handshake accept hash.
         private const string WsHandshakeGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+        // SPEC §7.2 B, spec commit 3eb6a85: command line is
+        //   WindowsForeground [--bind-ip <IPv4>] [port]
+        // The port keeps its old meaning and default; --bind-ip is optional and
+        // names the one address the helper must bind.
+        public const int DefaultPort = 8443;
+        public const string BindIpOption = "--bind-ip";
 
         // Largest authentication frame the helper reads (SPEC §7.2 C). The
         // longest legitimate frame is the reconnect request built from a real
@@ -153,6 +161,135 @@ namespace WindowsForeground
                 return true;
             }
             return b[0] == 169 && b[1] == 254;
+        }
+
+        // Parses the command line (SPEC §7.2 B). Pure and dependency-free so the
+        // tests can exercise it without a network: `--bind-ip <IPv4>` may appear
+        // anywhere and the optional port keeps its existing positional meaning
+        // and default (DefaultPort). Anything unknown is a startup error.
+        public static bool TryParseLaunchArguments(string[] args, out int port,
+                                                   out string? bindIp, out string error)
+        {
+            port = DefaultPort;
+            bindIp = null;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == BindIpOption)
+                {
+                    if (i + 1 >= args.Length)
+                    {
+                        error = $"{BindIpOption} requires an IPv4 address, " +
+                                $"for example {BindIpOption} 192.168.1.25";
+                        return false;
+                    }
+                    bindIp = args[++i];
+                    continue;
+                }
+
+                if (int.TryParse(args[i], out int parsedPort) && parsedPort >= 1 && parsedPort <= 65535)
+                {
+                    port = parsedPort;
+                    continue;
+                }
+
+                error = $"unexpected argument '{args[i]}'";
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+
+        // Resolves the single end point the helper will bind (SPEC §7.2 B).
+        // Without --bind-ip the behaviour is exactly the one shipped before:
+        // the first eligible local/private IPv4 on an operational non-tunnel
+        // interface. With --bind-ip the requested address is validated strictly
+        // (valid IPv4, not a wildcard, private/local, and actually assigned to
+        // such an interface on this host) and bound alone. Every failure is a
+        // startup error: there is never a silent fallback to another address.
+        public static bool TryResolveEndPoint(string? bindIp, int port,
+                                             [NotNullWhen(true)] out IPEndPoint? endpoint, out string error)
+        {
+            endpoint = null;
+            error = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(bindIp))
+            {
+                foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (nic.OperationalStatus != OperationalStatus.Up ||
+                        nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
+                    {
+                        continue;
+                    }
+                    foreach (UnicastIPAddressInformation unicast in nic.GetIPProperties().UnicastAddresses)
+                    {
+                        if (IsLocalPrivateAddress(unicast.Address))
+                        {
+                            endpoint = new IPEndPoint(unicast.Address, port);
+                            return true;
+                        }
+                    }
+                }
+                error = "no private/local IPv4 interface found (RFC 1918 or loopback); " +
+                        "refusing to start rather than exposing the helper on a public interface.";
+                return false;
+            }
+
+            string requested = bindIp.Trim();
+            if (!IPAddress.TryParse(requested, out IPAddress? requestedAddress) ||
+                requestedAddress.AddressFamily != AddressFamily.InterNetwork)
+            {
+                error = $"'{requested}' is not a valid IPv4 address; the helper only binds a " +
+                        "single local IPv4 address (for example 192.168.1.25).";
+                return false;
+            }
+            if (requestedAddress.Equals(IPAddress.Any) || requestedAddress.Equals(IPAddress.IPv6Any))
+            {
+                error = $"'{requested}' is a wildcard address; the helper must bind one concrete " +
+                        "address of the Wi-Fi adapter the iPad will connect to.";
+                return false;
+            }
+            if (!IsLocalPrivateAddress(requestedAddress))
+            {
+                error = $"'{requested}' is not a private/local IPv4 address (loopback, RFC 1918 or " +
+                        "link-local); refusing to start rather than exposing the helper on a " +
+                        "public interface.";
+                return false;
+            }
+            if (!IsAssignedToOperationalNonTunnelInterface(requestedAddress))
+            {
+                error = $"'{requested}' is not assigned to an operational non-tunnel network " +
+                        "interface on this computer; start the helper again after the Wi-Fi " +
+                        "adapter has that address.";
+                return false;
+            }
+
+            endpoint = new IPEndPoint(requestedAddress, port);
+            return true;
+        }
+
+        // True only when some operational, non-tunnel interface on this host
+        // actually owns the address (SPEC §7.2 B: exact ownership, not just a
+        // private-looking address).
+        private static bool IsAssignedToOperationalNonTunnelInterface(IPAddress address)
+        {
+            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != OperationalStatus.Up ||
+                    nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
+                {
+                    continue;
+                }
+                foreach (UnicastIPAddressInformation unicast in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (unicast.Address.Equals(address))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         // A client is usable for notifications only after TLS and a correct
