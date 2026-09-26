@@ -364,12 +364,17 @@ actions moves.
   physical verification pending" until the owner runs the §9 checks in both orientations. No
   dictation work is included here (still §8 stage 5 / §13).
 
-## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED (implementation in progress; CI and physical acceptance pending)
+## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED; IMPLEMENTED IN SOURCE (CI build and physical acceptance pending)
 Spec-first contract for the owner-approved optional Windows helper that tells the iPad which
 application is in the foreground so the iPad can present an app-specific CONTROL layout. This is
 the previously non-goaled "Windows companion / WebSocket transport" and "dynamic per-app panels"
 work (§11, §13), now approved and specified. Defined at base `482155b`; no Swift, README or other
 file is changed by this spec commit — the implementation commit must reference this spec SHA.
+The implementation now exists in the working tree (`BTRemote/WindowsForeground.swift`,
+`BTRemote/SettingsView.swift`, `BTRemote/AppSettings.swift`, `companion/`): the §7.2 F
+configurability gap found by the independent review is closed — the executable→layout map and every
+layout's labelled actions are one user-editable JSON document instead of hard-coded Swift action
+sets, and the Swift 6 strict-concurrency problem in `AppLayouts` is gone.
 
 Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only input channel.**
 The helper is out-of-band UI signalling only. It reports a foreground-app identity so the iPad knows
@@ -452,9 +457,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   `{"type":"paired",...}` frame, and afterwards exists only in the helper's DPAPI-protected file and
   the iPad Keychain. Neither the code nor the secret is ever committed to git (the §12 "never commit
   credentials" rule applies).
-  This clause records the exact wire contract the in-progress code follows
+  This clause records the exact wire contract both sides implement
   (`companion/WindowsForeground/`, `BTRemote/WindowsForeground.swift`); it does **not** certify
-  completion — implementation claims stay CI-only per I, and physical acceptance stays outstanding
+  verification — the Swift client has never been compiled (no Xcode/swift on this Windows machine),
+  so implementation claims stay CI-only per I, and physical acceptance stays outstanding
   (§9 item 10).
   The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
   when it actually pairs with or connects to the helper — never at launch and never for the plain
@@ -465,7 +471,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   identify apps by window title (titles are user- and locale-editable and are not trusted for
   identity). The iPad maps a known executable to a layout profile. Canonical mappings defined here:
   `Code.exe` → VS Code layout, `chrome.exe` → Chrome layout, `explorer.exe` → Explorer layout.
-  Matching is strictly by configured executable file name/path, never by title.
+  Matching is strictly by configured executable file name/path, never by title. That mapping is
+  **user data, not code**: the helper reads it from the JSON layout document described in F (the
+  file it creates at `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json`), and the three canonical
+  mappings above are that document's shipped defaults.
 - **E. Unknown / disconnected fallback.** If the foreground executable is not one of the configured
   mappings (an unknown app), or the helper is not running / not paired / the channel is down, the
   iPad must show the default generic CONTROL layout from §7.1, unchanged. Losing the helper
@@ -481,6 +490,19 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   **data / user-configurable**, so a new app profile or a different project's targets can be added
   without a code change; a layout may only reference sequences that already produce existing HID
   reports.
+  Concretely, that data is **one JSON document** the user can edit without touching any source:
+  `{ "profiles": [ { "id", "title", "executables": ["Some.exe"], "actions": [ { "label",
+  "chord" | "sequence" | "text" | "settings" } ] } ] }`. A `chord` is one chord (`"Ctrl+Shift+P"`,
+  `"F5"`), a `sequence` is an ordered list of chords (`["Ctrl+K", "Ctrl+O"]`), `text` is a literal
+  string/path to type, and `settings` names the app-settings key holding the user's own chord.
+  All four targets dispatch through the existing `HIDInput`/`KeyTypist` keyboard path, so no new
+  keycode or report type is possible; an unconfigured or unparseable target sends nothing and its
+  button stays disabled. The Windows helper reads the same document (it creates
+  `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json` from the shipped defaults on first run) to
+  decide which executables are "known", and the iPad edits the matching copy in
+  **Settings → App layouts (JSON)**, with **Restore shipped layouts** to get the shipped defaults
+  back; the six project/folder targets below stay editable in their own Settings fields. The shipped
+  defaults are listed verbatim below and stay unchanged.
   - **VS Code layout — required action set (verbatim, exact labels):** `New Window`, `Open Folder`,
     `Frost Pi`, `SideChatAI`, `Explorer`, `Source Control`, `New Terminal`, `Close Saved`,
     `Split Editor Right`, `Move to the editor`, `Quick Open Browser Tab`. These labels must appear
@@ -488,7 +510,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
     project-specific target are **user-defined targets**: each is ultimately a keystroke / shortcut /
     command sequence that the user configures (e.g. a VS Code command palette entry, a task, a
     folder path, an extension shortcut). Their concrete keystroke target must be **configurable in
-    app settings**, never hard-coded, so the project can change without a code change.
+    app settings**, never hard-coded, so the project can change without a code change. In the shipped
+    document these six actions are `"settings"` targets, i.e. the user types the chord (or typed
+    text/path) in the matching Settings field; the three VS Code targets and the three Explorer
+    targets all stay user-configurable.
   - **Chrome layout — useful action set:** `New Tab` (Ctrl+T), `Close Tab` (Ctrl+W), `Reload`
     (Ctrl+R), `Focus Address Bar` (Ctrl+L), `Back` (Alt+←), `Forward` (Alt+→), `History` (Ctrl+H),
     `Show Bookmarks` (Ctrl+Shift+B), `Full Screen` (F11).
@@ -501,9 +526,12 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   localhost/LAN-only, encrypted and mutually authenticated. The helper must not auto-start into a
   state that overrides the user's §7.1 default layout without a completed pairing (clause E).
 - **H. Relationship to existing scope.** This makes the previously non-goaled "Windows companion /
-  WebSocket transport" and "dynamic per-app panels" items (§11, §13) **approved and specified, but
-  not implemented**. The core product line stays exactly "IPAD → BLE HID → WINDOWS"; the helper sits
-  beside that path and only selects which layout the iPad presents, it never carries input.
+  WebSocket transport" and "dynamic per-app panels" items (§11, §13) **approved, specified and
+  implemented in source — but not verified**: the C# helper builds and its dependency-free tests
+  pass on this Windows machine, the Swift client has never been compiled (no Xcode/swift here) and
+  no §7.2 behaviour has been tested on real hardware. The core product line stays exactly
+  "IPAD → BLE HID → WINDOWS"; the helper sits beside that path and only selects which layout the
+  iPad presents, it never carries input.
 - **I. Verification / limits.** Implementation may claim CI only. Foreground-detection correctness,
   secure pairing, per-app layout correctness, the iOS local-network permission prompt (requested
   only at pairing/connect time) and the unknown/disconnected/denied-permission fallback all stay
@@ -528,9 +556,13 @@ PR #10. The owner's §9 hardware acceptance for it is still outstanding. Stage *
 CONTROL surface** is implemented — contract defined in §7.1 (spec `97d459b`); code in `fd50ae1`
 (`feat(ios): add unified CONTROL workspace`); merged `482155b` via PR #17.
 The next bounded active stage is **5. Windows helper and foreground-aware layouts (§7.2)** — the
-companion app, secure local pairing and per-app/foreground layout contract are now defined by this
-spec commit; the implementation is **not yet done** and the implementation commit must reference
-this spec SHA (§7.2 I). Later unstarted roadmap stages (native dictation RU/EN, feedback,
+companion app, secure local pairing and per-app/foreground layout contract are defined by this spec
+commit (fb77782) and the implementation is now **present in the working tree** (Windows C# helper +
+iPad `BTRemote/WindowsForeground.swift` + the user-editable JSON layout document from §7.2 F);
+the implementation commit must reference that spec SHA. Nothing in §7.2 may be called verified:
+the C# helper builds and its dependency-free tests pass locally (48 checks), Swift cannot be
+compiled on this Windows machine so the iOS client is unbuilt, and §9 item 10 stays outstanding.
+Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
 dictation contract is written here.
 
@@ -604,8 +636,11 @@ can pass it.)
   `Quick Open Browser Tab`) and the useful Chrome/Explorer sets, and that tapping any of those
   buttons sends its pre-configured keystroke / shortcut / character sequence through the existing
   HID path to the focused Windows app. Confirm the project-specific targets (`Frost Pi`,
-  `SideChatAI`, `Quick Open Browser Tab` and similar) are taken from configurable app settings and
-  are NOT hard-coded, so a different project's targets can be used without a code change.
+  `SideChatAI`, `Quick Open Browser Tab` and similar) are taken from the configurable layout
+  document / app settings and are NOT hard-coded, so a different project's targets (and a new
+  executable→layout mapping, e.g. a `Cursor.exe` profile) can be used without a code change: edit
+  the helper's `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json` and copy the same JSON into the
+  iPad's **Settings → App layouts (JSON)**, then check the layout changes again.
   (c) **Fallback:** foreground an app that is not one of the configured mappings (unknown exe), and
   separately stop the helper / drop the channel; in both cases the iPad must show the default
   generic §7.1 CONTROL layout unchanged, and must never be left on a blank or invalid layout.
@@ -654,10 +689,22 @@ can pass it.)
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
   `3a3ddf2`). Physical verification stays pending per §9.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
+- **Windows helper and foreground-aware layouts (§7.2):** implemented in source, **not verified**.
+  The C# helper builds with `dotnet build` and its dependency-free tests pass locally
+  (`ALL TESTS PASSED`, 48 checks). The Swift side (`BTRemote/WindowsForeground.swift`,
+  `BTRemote/KeyboardView.swift`, `BTRemote/AppSettings.swift`, `BTRemote/SettingsView.swift`) has
+  never been compiled — there is no Xcode/swift on this machine — so its build must be confirmed by
+  the macOS GitHub Actions job and its behaviour by the owner's §9 item 10 hardware session. Do not
+  describe §7.2 as passed, and do not treat the previously hard-coded VS Code / Chrome / Explorer
+  action sets or the fixed executable map as finished work: both are now the user-editable JSON
+  document (§7.2 F).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
   HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
   `ac87c61` / run `35642707603`, `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`);
-  any newer Swift edit is unverified without a new CI run.
+  any newer Swift edit is unverified without a new CI run — which includes the §7.2 F work in
+  `BTRemote/WindowsForeground.swift` / `KeyboardView.swift` / `AppSettings.swift` /
+  `SettingsView.swift` (uncommitted at the time of writing). The C# companion builds and its tests
+  pass locally (`dotnet`, .NET 8, no NuGet).
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
 - Imported upstream features out of scope here: iPhone remote surface, macOS Bluetooth Classic
@@ -712,12 +759,13 @@ truly needs more.
 ## 13. Future phase
 (Not active — any of these requires a preceding spec commit per the rule at the top of this file.)
 - Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software") and
-  dynamic per-app / foreground-aware layouts — the contract is now defined at §7.2 (this spec
-  commit); the active implementation is not yet done and must reference this spec SHA per the
-  spec-first rule and §7.2 I.
+  dynamic per-app / foreground-aware layouts — the contract is defined at §7.2 (spec commits
+  `b751488` / `fb77782`); the implementation is present in source but unbuilt and untested, and the
+  implementation commit must reference that spec SHA per the spec-first rule and §7.2 I.
 - OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
   BLE-stack implications to be researched), gyro aim (implemented and CI-verified in `1284aca`
   + fixes `28867db`/`aa4443c`, CI run `36203590465`; physical acceptance pending per §5.1 L /
   §9), native dictation, modifier combined keycaps / sticky restore (specified in §5/§9;
-  implemented in `ac87c61` + `dbe36ab` — physical verification pending).
+  implemented in `ac87c61` + `dbe36ab` — physical verification pending), the remaining §7.2 items
+  (CI build of the Swift client and the §9 item 10 hardware checks).

@@ -207,10 +207,10 @@ namespace WindowsForeground
             _authenticated = false;
         }
 
-        public async Task SendForegroundChangedAsync(AppIdentity identity, CancellationToken cancellationToken)
+        public async Task SendForegroundChangedAsync(string token, CancellationToken cancellationToken)
         {
             WebSocket ws = _ws ?? throw new InvalidOperationException("no paired client");
-            string json = ForegroundMapping.ForegroundChangedJson(identity);
+            string json = ForegroundMapping.ForegroundChangedJson(token);
             byte[] payload = Encoding.UTF8.GetBytes(json);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));

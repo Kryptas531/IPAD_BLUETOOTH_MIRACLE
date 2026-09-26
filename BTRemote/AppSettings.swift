@@ -28,13 +28,20 @@ enum AppSettings {
     // `Quick Open Browser Tab`, `This PC`, `Documents`, `Downloads`) are user-defined. Each key
     // stores one chord string the user types in Settings (e.g. "Ctrl+Shift+P"); no target path or
     // keystroke sequence is hard-coded and no default is supplied. A blank value means "not
-    // configured": that keycap sends nothing.
+    // configured": that action sends nothing. These six keys are the `"settings"` targets of the
+    // shipped layout document (`layoutProfilesKey`).
     static let frostPiShortcutKey = "BTRemote.shortcutFrostPi"
     static let sideChatAIShortcutKey = "BTRemote.shortcutSideChatAI"
     static let quickOpenBrowserTabShortcutKey = "BTRemote.shortcutQuickOpenBrowserTab"
     static let thisPCShortcutKey = "BTRemote.shortcutThisPC"
     static let documentsShortcutKey = "BTRemote.shortcutDocuments"
     static let downloadsShortcutKey = "BTRemote.shortcutDownloads"
+
+    /// SPEC §7.2 F: the user-editable JSON layout document (executable→layout mappings plus each
+    /// layout's labelled actions). Holds the text exactly as the Windows helper's
+    /// `%LOCALAPPDATA%\iPadForegroundHelper\profiles.json`; blank/unparsable means "use the shipped
+    /// defaults" (`AppLayouts.defaultJSON`).
+    static let layoutProfilesKey = "BTRemote.layoutProfilesJSON"
 
     static let maxAdvertisedNameLength = 26
 

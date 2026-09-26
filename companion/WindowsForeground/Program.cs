@@ -1,7 +1,8 @@
 // Entry point for the Windows 10/11 companion helper (SPEC §7.2, spec
-// commit b751488). Three parts:
+// commit b751488; the §7.2 F configurability fix). Three parts:
 //
-//   * ForegroundMapping — pure executable → app-identity mapping (unit tested),
+//   * ForegroundMapping — pure user-configurable layout document (executable →
+//     layout token, chord / sequence / text targets), unit tested,
 //   * ForegroundWatcher — Win32 polling of the foreground window's process,
 //   * ForegroundServer  — local TLS WebSocket that authenticates the client
 //     and then only ever emits the single bounded message
@@ -78,6 +79,21 @@ namespace WindowsForeground
 
                 X509Certificate2 cert = LoadPersistedCert(certPath) ?? CreateSelfSignedCert(certPath);
 
+                // SPEC §7.2 F: which executables exist and which layout each one selects is
+                // user data, not code. The helper creates
+                // %LOCALAPPDATA%\iPadForegroundHelper\profiles.json from the shipped defaults on
+                // first run; the user edits that file (adding apps, or adding / renaming /
+                // reordering / retargeting actions) and copies the same JSON into the iPad's
+                // "App layouts (JSON)" setting. Parse or validation problems are reported and fall
+                // back to the shipped defaults, so the helper never stops working because of a bad
+                // edit.
+                string profilesPath = Path.Combine(dataDirectory, "profiles.json");
+                LayoutDocumentData layouts = ForegroundMapping.LoadDocument(profilesPath);
+                foreach (string issue in LayoutValidator.Validate(layouts))
+                {
+                    Console.WriteLine("[windows-foreground] layout configuration notice: " + issue);
+                }
+
                 // The pairing code is the only secret proving the connecting
                 // device is the user's iPad. It is local (read off this
                 // console), one-time (consumed on the first successful pair),
@@ -119,8 +135,11 @@ namespace WindowsForeground
                         continue;
                     }
 
-                    AppIdentity identity = watcher.Current();
-                    string token = ForegroundMapping.Token(identity);
+                    // Only executables configured in the user's layout document resolve to a
+                    // layout; anything else (unknown app, no foreground window, access denied)
+                    // is "generic", so the iPad falls back to §7.1 immediately (§7.2 E) and no
+                    // executable path or window information ever leaves Windows (§7.2 G).
+                    string token = ForegroundMapping.ResolveToken(layouts, watcher.CurrentExecutablePath());
                     if (token == lastToken)
                     {
                         continue;
@@ -128,7 +147,7 @@ namespace WindowsForeground
 
                     try
                     {
-                        await server.SendForegroundChangedAsync(identity, CancellationToken.None);
+                        await server.SendForegroundChangedAsync(token, CancellationToken.None);
                         lastToken = token;
                     }
                     catch (Exception ex)
@@ -205,10 +224,12 @@ namespace WindowsForeground
         // persisted DPAPI-protected, so the same key pair (and therefore the
         // same pinned fingerprint) survives helper restarts.
         //
-        // Open (tracked): the iPad must TOFU-pin this certificate (or ship a
-        // private CA) for full MITM resistance; until the iOS side is built,
-        // TLS+one-time-code is the real Windows-side implementation and no
-        // plaintext fallback exists.
+        // Open (tracked): the iPad trust-on-first-use pins this certificate (see
+        // BTRemote/WindowsForeground.swift); full MITM resistance would need a private
+        // CA or an issued client certificate, which is outside this bounded step. The
+        // iPad side exists in source but has never been compiled (no Xcode/swift on this
+        // Windows machine), so its build still has to be confirmed by the macOS GitHub
+        // Actions job.
         private static X509Certificate2 CreateSelfSignedCert(string certPath)
         {
             using RSA rsa = RSA.Create(2048);
