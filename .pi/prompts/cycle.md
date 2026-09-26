@@ -1,5 +1,5 @@
 ---
-description: Luna orchestrates one bounded Builder → Reviewer implementation cycle
+description: Pi MAIN orchestrates one bounded Builder → Reviewer implementation cycle
 argument-hint: "[focus or task hint]"
 ---
 
@@ -22,7 +22,7 @@ ORCHESTRATOR RESPONSIBILITIES:
    - git status / current diff
    - directly relevant implementation files
 
-2. Existing Qwen-specific /autopilot material may be read as repository evidence, but DO NOT launch a nested Qwen-native /autopilot.
+2. Provider-specific files such as `QWEN.md` and `.qwen/*` are not MAIN Pi runtime instructions. Read them only when that provider runtime is explicitly relevant. Do not launch a nested autopilot.
 
 3. Select ONE bounded implementation task.
    If the operator supplied a focus above, use it unless repository evidence proves it invalid or already complete.
