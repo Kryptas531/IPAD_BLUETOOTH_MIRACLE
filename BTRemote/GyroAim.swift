@@ -117,9 +117,11 @@ enum GameInputMode: String {
             while abs(dx) > 127 || abs(dy) > 127 {
                 let chunkX = dx > 0 ? min(127, dx) : max(-127, dx)
                 let chunkY = dy > 0 ? min(127, dy) : max(-127, dy)
-                hid.move(dx: HIDInput.clamp(CGFloat(chunkX)), dy: HIDInput.clamp(CGFloat(chunkY)))
-                dx -= chunkX
-                dy -= chunkY
+                let emitX = HIDInput.clamp(CGFloat(chunkX))
+                let emitY = HIDInput.clamp(CGFloat(chunkY))
+                hid.move(dx: emitX, dy: emitY)
+                dx -= Double(emitX)
+                dy -= Double(emitY)
             }
             // Send whole counts only; a sub-integer remainder stays in the carry.
             let wholeX = dx.rounded(.towardZero)

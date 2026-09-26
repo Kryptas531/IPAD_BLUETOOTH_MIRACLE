@@ -137,11 +137,8 @@ struct KeyboardView: View {
                     controlBar
                     inputField
                     keyPanel
-                    TrackpadPanel(
-                        hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics,
-                        touchMovementEnabled: gameInputMode != .gyro
-                    )
-                    .frame(maxHeight: .infinity)
+                    TrackpadPanel(hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics)
+                        .frame(maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
