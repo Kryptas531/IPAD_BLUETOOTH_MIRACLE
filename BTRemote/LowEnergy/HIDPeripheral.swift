@@ -492,8 +492,16 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         state = peripheral.state
         _trace("CB state -> \(peripheral.state.rawValue)")
-        if peripheral.state == .poweredOn, isHIDServiceAllowed, !isHIDServiceAdded {
-            installServices()
+        if peripheral.state == .poweredOn, isHIDServiceAllowed {
+            if isHIDServiceAdded || batteryServiceObj != nil {
+                // Bluetooth power cycle invalidates the previous GATT registration (including a
+                // partially installed service chain): rebuild the peripheral manager and reinstall
+                // the service chain before advertising again.
+                _resetForRestart()
+                start()
+            } else {
+                installServices()
+            }
         }
         if peripheral.state != .poweredOn {
             isAdvertising = false

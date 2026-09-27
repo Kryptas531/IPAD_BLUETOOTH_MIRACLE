@@ -83,6 +83,25 @@ see §12.)
 - **BLE pairing:** iPad auto-advertises HID on launch; Windows pairs it as a standard BT
   keyboard+mouse; connection state visible in app (`SetupView`/`NotConnectedView`).
   IMPLEMENTED + MEASURED (user confirmed basic path finger→BLE→Windows + typing on hardware).
+- **BLE advertising recovery (CONTRACT DEFINED ONLY — not implemented; §9 item 11):** whenever the
+  CoreBluetooth peripheral-manager state leaves `.poweredOn` and later returns to `.poweredOn`,
+  and auto-advertising is still authorized (`AppSettings.autoAdvertiseKey`,
+  `BTRemote/BTRemoteApp.swift`), the app must restore its HID service as needed and resume
+  advertising **without requiring an app restart**. Scope is exactly this observed state-handling
+  gap in `BTRemote/LowEnergy/HIDPeripheral.swift` (`peripheralManagerDidUpdateState`): it clears
+  `isAdvertising` when the state leaves `.poweredOn`, but on return to `.poweredOn` it calls
+  `installServices()` only when `!isHIDServiceAdded` — if that flag is still `true` from before the
+  transition, nothing is re-installed and `startAdvertisingNow()` is never reached, so the app
+  keeps reporting "advertising: no" and Windows simply stops seeing the device.
+  This is **lifecycle recovery, not a new latency target** and not a claim that it fixes every
+  disconnect cause: the HOGP profile and report map/report references (§4/§5), the
+  `*EncryptionRequired` pairing and security model (§4), the existing report semantics and the
+  existing low-connection-latency contract (§5 "Low connection latency", a request not a guarantee)
+  all stay exactly as already specified. No maximum pairing/advertising duration is introduced here.
+  Windows may still reconnect on its own schedule through its normal host behaviour — what must NOT
+  be needed again is deleting and re-pairing the paired HID device.
+  `BTRemote/LowEnergy/` is the protected boundary (§4): the implementation commit must follow this
+  spec commit, cite a specific technical reason and get focused review.
 - **Mouse:** relative move (`HIDInput.move`), left click (tap), right click (two-finger tap),
   vertical scroll (two-finger move), drag (1-finger pan). IMPLEMENTED (CI VERIFIED).
 - **Keyboard:** typing through the input field (`KeyTypist`/`HIDInput.type(char)` + ASCII→keycode
@@ -681,7 +700,15 @@ can pass it.)
   never at app launch and never on the plain §7.1 path; verify that denying it leaves the generic
   §7.1 CONTROL layout and all BLE HID pairing and existing input paths (items 4–7 / §5) completely
   unaffected.
-- Ready = all mandatory items (former MVP table 1–14) plus items 9–10 work AND lock-screen
+- 11. BLE advertising recovery (§5 "BLE advertising recovery") — simple physical check: with the
+  iPad already paired and controlling Windows, turn iPad Bluetooth off and back on, then return to
+  the app. The app must again show Bluetooth powered on / advertising: yes **without restarting or
+  reinstalling it**, and the existing Windows pair must reconnect through Windows' normal behaviour
+  for an already-paired device — the HID device must NOT have to be deleted and re-paired.
+  Afterwards re-run a spot check from items 4–7 (mouse move/tap/scroll, typing) to confirm nothing
+  else changed. Do not record this as a latency result or as proof that all disconnect causes are
+  fixed.
+- Ready = all mandatory items (former MVP table 1–14) plus items 9–11 work AND lock-screen
   acceptance passes.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
