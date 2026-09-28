@@ -592,8 +592,8 @@ file was changed by that spec commit. The implementation is committed in `c8babc
 found by the independent review is closed — the executable→layout map and every
 layout's labelled actions are one user-editable JSON document instead of hard-coded Swift action
 sets, and the Swift 6 strict-concurrency problem in `AppLayouts` is gone. The code being committed
-does not mean it is verified: no CI job has built the Swift client yet and no hardware test has been
-run (§7.2 I, §9 item 10).
+does not mean it is verified: the Swift client has never been built locally and is CI-built by runs
+`36372951698` / `36373205510`; no hardware test has been run (§7.2 I, §9 item 10).
 
 Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only input channel.**
 The helper is out-of-band UI signalling only. It reports a foreground-app identity so the iPad knows
@@ -704,8 +704,9 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   credentials" rule applies).
   This clause records the exact wire contract both sides implement
   (`companion/WindowsForeground/`, `BTRemote/WindowsForeground.swift`); it does **not** certify
-  verification — the Swift client has never been compiled (no Xcode/swift on this Windows machine),
-  so implementation claims stay CI-only per I, and physical acceptance stays outstanding
+  verification — the Swift client has never been compiled locally (no Xcode/swift on this Windows
+  machine); CI compiles it successfully in runs `36372951698` / `36373205510`, so compilation is
+  CI-evidenced only: behaviour remains unverified and physical acceptance stays outstanding
   (§9 item 10).
   The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
   when it actually pairs with or connects to the helper — never at launch and never for the plain
@@ -773,9 +774,10 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
 - **H. Relationship to existing scope.** This makes the previously non-goaled "Windows companion /
   WebSocket transport" and "dynamic per-app panels" items (§11, §13) **approved, specified and
   implemented in source — but not verified**: the C# helper builds and its dependency-free tests
-  pass on this Windows machine, the Swift client has never been compiled (no Xcode/swift here) and
-  no §7.2 behaviour has been tested on real hardware. The core product line stays exactly
-  "IPAD → BLE HID → WINDOWS"; the helper sits beside that path and only selects which layout the
+  pass on this Windows machine, the Swift client has never been compiled locally (no Xcode/swift
+  here; CI builds it in runs `36372951698` / `36373205510`) and no §7.2 behaviour has been tested on
+  real hardware. The core product line stays exactly "IPAD → BLE HID → WINDOWS"; the helper sits
+  beside that path and only selects which layout the
   iPad presents, it never carries input.
 - **I. Verification / limits.** Implementation may claim CI only. Foreground-detection correctness,
   secure pairing, per-app layout correctness, the iOS local-network permission prompt (requested
@@ -1038,7 +1040,8 @@ Windows→Mac build path = GitHub Actions macOS runner.)
 
 **Non-goals / future work, not active:** OpenClaw, clipboard / voice / state, macros, telemetry,
 accounts, cloud, process monitoring. (Windows companion / WebSocket transport and dynamic per-app
-panels are no longer non-goals: they are approved and spec-defined at §7.2, pending implementation.)
+panels are no longer non-goals: they are approved and spec-defined at §7.2, implemented in `c8babce`
+and CI-built (runs `36372951698` / `36373205510`); physical verification is pending.)
 Current product is exactly: IPAD → BLE HID → WINDOWS.
 
 **Tooling constraint:** only the current corporate Qwen model + built-in Qwen Code features; no
@@ -1067,9 +1070,12 @@ truly needs more.
   review refresh) are docs-only on branch `cleanup/source-of-truth` — no Swift changed, so no
   new CI run is required. Newest IPA containing the Win-key fix: `.qwen/tmp/ipa-p4/BTRemote.ipa`
   (from the `0bccedc` build).
-- Current verified facts (2026-09-26): `main` local == `origin/main` == `c89997f`; newest green
-  "Build unsigned IPA" run `36203590465` at head `aa4443c`; newest IPA = that run's artifact
-  `btr-remote-unsigned-ipa`.
+- Current verified facts (as of 2026-09-28): `main` local == `origin/main` == `30ccaaa`; newest
+  green "Build unsigned IPA" run `36373205510` (on `30ccaaa`); pre-merge evidence: run `36372951698`
+  (at `6c746a6`). Newest IPA = the `36373205510` artifact `btr-remote-unsigned-ipa`.
+- Earlier verified facts (2026-09-26, historical, superseded by the line above): `main` local ==
+  `origin/main` == `c89997f`; newest green "Build unsigned IPA" run `36203590465` at head
+  `aa4443c`; newest IPA = that run's artifact `btr-remote-unsigned-ipa`.
 - Never commit: credentials, downloaded IPA/ZIPs, SideStore data, probes (`rawprobe/`), temp
   folders (`.qwen/tmp`), or unrelated scratch.
 - Physical verification (full §9 procedure) still awaits the user's hardware sessions.
@@ -1079,12 +1085,13 @@ truly needs more.
 - Phase B: Windows companion / WebSocket transport (supersedes "no Windows-side software") and
   dynamic per-app / foreground-aware layouts — the contract is defined at §7.2 (spec commits
   `b751488` / `fb77782`) and the implementation is committed in `c8babce`; that implementation is
-  still unverified — the Swift client has never been built and the §9 item 10 hardware checks are
-  outstanding.
+  still unverified — the Swift client has never been compiled locally but is CI-built by runs
+  `36372951698` / `36373205510`, so only the §9 item 10 hardware checks remain outstanding.
 - OpenClaw; clipboard / voice / state integrations.
 - Deferred backlog: TOUCH absolute digitizer (spec commit first; feature flag; separate branch;
   BLE-stack implications to be researched), gyro aim (implemented and CI-verified in `1284aca`
   + fixes `28867db`/`aa4443c`, CI run `36203590465`; physical acceptance pending per §5.1 L /
   §9), native dictation, modifier combined keycaps / sticky restore (specified in §5/§9;
-  implemented in `ac87c61` + `dbe36ab` — physical verification pending), the remaining §7.2 items
-  (CI build of the Swift client and the §9 item 10 hardware checks).
+  implemented in `ac87c61` + `dbe36ab` — physical verification pending), the remaining §7.2 item
+  (the §9 item 10 hardware checks; the CI build of the Swift client is done — runs
+  `36372951698` / `36373205510`).
