@@ -44,8 +44,10 @@ not committed; Swift 6.0, strict concurrency complete; iOS deployment target 15.
 Transport: **BLE HID over GATT only.** `BTRemote/LowEnergy/`: `HIDPeripheral.swift`
 (CBPeripheralManager, HID service 0x1812, Report Map, Protocol Mode, Boot Keyboard I/O, report
 references, `*EncryptionRequired`, bootstrap report on subscribe; `sendMouse`/`sendKeyboard`/
-`sendConsumer`/`sendSystemControl`), `HIDProfile.swift` (UUIDs + 239-byte report map),
-`HIDReports.swift` (MouseReport, KeyboardReport 8 bytes, ConsumerReport, Keycode enum),
+`sendConsumer`/`sendSystemControl`), `HIDProfile.swift` (UUIDs + 303-byte report map: the original 239 bytes plus the additive
+§5.2 gamepad block),
+`HIDReports.swift` (MouseReport, KeyboardReport 8 bytes, ConsumerReport, GamepadReport 7 bytes,
+Keycode enum),
 `HIDCentral.swift`.
 
 Bluetooth Classic backend (`BTRemote/Classic/`, IOBluetooth SDP/L2CAP) exists but is **macOS-only**
@@ -238,13 +240,19 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
   owner has run the §9 hardware acceptance including GAME gyro; until then it stays
   "implemented, physical verification pending".
 
-### 5.2 Screamer racing gamepad — CONTRACT DEFINED ONLY (not implemented)
+### 5.2 Screamer racing gamepad — CONTRACT DEFINED AND IMPLEMENTED IN SOURCE (CI and physical acceptance pending)
 Spec-first contract for the operator-requested first playable **Screamer** (racing) gamepad surface.
-Defined at base `1519ee6b00cd408312f610fe2b88c29b2c79e344` (`origin/main`, merge of PR #22). This
-commit changes `SPEC.md` only: no `GamepadReport`, no gamepad report ID, no gamepad bytes and no
-racing UI exist in the code yet, and nothing in this section may be described as implemented,
-built or verified until the follow-up implementation commit references this spec SHA (rule at the
-top of this file).
+The contract was defined at base `1519ee6b00cd408312f610fe2b88c29b2c79e344` (`origin/main`, merge of
+PR #22) by spec commit `e8a62aa`, which changed `SPEC.md` only. The contract is now implemented in
+source by `8e9cc6b` (`feat(game): implement Screamer racing gamepad [spec e8a62aa]`) and the follow-up
+fixes `bfb3231` (`fix(game): iterate gamepad subscriber set [spec e8a62aa]`) and `4fa3506`
+(`fix(game): hide racing controls outside racing [spec e8a62aa]`), all of which reference
+this spec SHA as required by the rule at the top of this file. `GamepadReport`, Report ID 7, the
+additive gamepad bytes in the report map and the racing UI therefore do exist in code. Nothing in
+this section may be described as built, tested or verified yet: CI for the current implementation/PR
+HEAD `4fa3506` is still pending (not green), and the §9 item 12 hardware acceptance — including the
+Windows descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still
+outstanding.
 - **A. Why the protected HID exception is technically necessary.** Screamer needs **analog**
   steering plus **analog** gas/brake plus separate action buttons, usable at the same time. The
   existing HID surface cannot express that: `MouseReport` (`BTRemote/LowEnergy/HIDReports.swift`)
@@ -794,12 +802,16 @@ user-editable JSON layout document from §7.2 F. Nothing in §7.2 may be called 
 the C# helper builds and its dependency-free tests pass locally (67 checks), Swift cannot be
 compiled on this Windows machine so the iOS client is unbuilt and its CI build is still pending,
 and §9 item 10 stays outstanding.
-The next bounded task is the operator-requested **Screamer racing gamepad** contract (§5.2): the
+The next bounded task was the operator-requested **Screamer racing gamepad** contract (§5.2): the
 additive Report ID 7 composite gamepad report and the nested RACING sub-mode under GAME. It is a
 new item added to the list above and does not re-order it: stage 5 (§7.2) verification stays
-outstanding exactly as described above. Nothing in §5.2 is implemented, built or tested yet — the
-implementation commit must cite §5.2 and follow the §4 protected-path exception exactly as written
-there.
+outstanding exactly as described above. §5.2 is now implemented in source — commits `8e9cc6b`
+(`feat(game): implement Screamer racing gamepad [spec e8a62aa]`) and fixes `bfb3231`
+(`fix(game): iterate gamepad subscriber set [spec e8a62aa]`) and `4fa3506`
+(`fix(game): hide racing controls outside racing [spec e8a62aa]`), all following spec `e8a62aa` and
+following the §4 protected-path exception exactly as written there. Nothing in §5.2 is built, tested
+or verified yet: CI for the current implementation/PR HEAD `4fa3506` is still pending and §9 item 12
+is still outstanding.
 
 Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
@@ -900,8 +912,9 @@ can pass it.)
   Afterwards re-run a spot check from items 4–7 (mouse move/tap/scroll, typing) to confirm nothing
   else changed. Do not record this as a latency result or as proof that all disconnect causes are
   fixed.
-- 12. Screamer racing gamepad (§5.2) — physical checks only, on the real iPad + Windows; nothing in
-  §5.2 exists in code yet, so do not run these before the implementation commit lands:
+- 12. Screamer racing gamepad (§5.2) — physical checks only, on the real iPad + Windows; the §5.2
+  implementation exists in source (`8e9cc6b` + `bfb3231` + `4fa3506`) but is not CI-built or installed
+  yet, so do not run these before the CI-built implementation is installed on the iPad:
   (a) after installing the new build, Windows enumerates the iPad as a device that also exposes a
   gamepad with analog axes (if it does not, remove the paired BTRemote HID device and re-pair once,
   §5.2 M, and record that as a descriptor-cache action, not a code fix);
@@ -919,7 +932,7 @@ can pass it.)
   (g) afterwards re-run a spot check from items 4–7 and item 11 to confirm the existing mouse,
   keyboard, DECK, Direct Input and advertising-recovery behaviour is completely unchanged.
 - Ready = all mandatory items (former MVP table 1–14) plus items 9–11 work AND lock-screen
-  acceptance passes; item 12 becomes mandatory once the §5.2 implementation lands.
+  acceptance passes; item 12 becomes mandatory once the CI-built implementation is installed.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
@@ -953,10 +966,12 @@ can pass it.)
   CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
   `3a3ddf2`). Physical verification stays pending per §9.
-- **Screamer racing gamepad (§5.2):** CONTRACT DEFINED ONLY — not implemented, not built, not
-  tested, not verified. No `GamepadReport`, no Report ID 7, no gamepad bytes in the report map and
-  no RACING input source exist at `1519ee6`. Do not describe any gamepad or Screamer behaviour as
-  working. See §5.2 N for the CI-vs-hardware claim boundary and §5.2 M for the Windows remove/re-pair
+- **Screamer racing gamepad (§5.2):** CONTRACT DEFINED AND IMPLEMENTED IN SOURCE — implementation
+  commits `8e9cc6b` + fixes `bfb3231` + `4fa3506` [spec `e8a62aa`]; **not built, not tested, not
+  verified**. `GamepadReport`, Report ID 7, the additive gamepad bytes in the report map (303 bytes
+  total) and the RACING input source now exist in code, but CI for the current implementation/PR HEAD
+  `4fa3506` is still pending. Do not describe any gamepad or Screamer behaviour as working.
+  See §5.2 N for the CI-vs-hardware claim boundary and §5.2 M for the Windows remove/re-pair
   fallback after the report-map change; §5.2 D is the only authorization to touch
   `BTRemote/LowEnergy/` / `BTRemote/HIDInput.swift` / `BTRemote/HIDReports.swift` for this, and
   `BTRemote/Classic/` stays untouched unless proven otherwise.
