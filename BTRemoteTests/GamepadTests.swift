@@ -401,7 +401,8 @@ struct GamepadTests {
         expect(recentered.gamepad.buttons == heldButtonsAfterRecenter,
                "RECENTER keeps every held ability button")
         expect(recentered.touchOrigin != nil, "RECENTER keeps the floating drag origin")
-        expectEqual(recentered.heldButtons.count, 3, "RECENTER keeps all three ability bits")
+        expect(recentered.heldButtons == heldButtonsAfterRecenter,
+               "RECENTER keeps all three ability bits")
         expectEqual(
             Array(recentered.gamepad.data),
             [0x07, 0x00, 0x00, 0x7F, 0x00, 0xFF, 0xFF],
