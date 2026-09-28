@@ -14,6 +14,12 @@ final class HIDPeripheral: NSObject, ObservableObject {
     /// broadcasts skip inactive hosts
     @Published private(set) var inactiveCentrals: Set<UUID> = []
     @Published private(set) var connectedCentrals: Set<UUID> = []
+    /// SPEC §5.2 L: the central IDs that are subscribed to the *gamepad* Report
+    /// characteristic (Report ID 7). `subscribedCentrals` cannot answer that question,
+    /// because every report characteristic shares the same 0x2A4D `HIDProfile.report`
+    /// UUID and is only distinguished by its Report Reference descriptor, so the racing
+    /// destination is tracked on its own.
+    @Published private(set) var gamepadSubscribedCentrals: Set<UUID> = []
     @Published private(set) var keyboardLEDs: KeyboardLEDs = []
     @Published private(set) var lastError: String?
     @Published private(set) var batteryLevel: UInt8 = 100
@@ -45,10 +51,16 @@ final class HIDPeripheral: NSObject, ObservableObject {
         ReportID.mouse.rawValue: MouseReport.zero.data,
         ReportID.keyboard.rawValue: KeyboardReport.zero.data,
         ReportID.systemControl.rawValue: SystemControlReport.zero.data,
-        ReportID.consumerControl.rawValue: ConsumerReport.zero.data
+        ReportID.consumerControl.rawValue: ConsumerReport.zero.data,
+        // SPEC §5.2 F: a host that reads the gamepad before the first send reads neutral.
+        ReportID.gamepad.rawValue: GamepadReport.zero.data
     ]
 
     private var pendingBroadcast: (Data, CBMutableCharacteristic)?
+    /// SPEC §5.2 E: one latest-wins gamepad state, deliberately separate from the
+    /// relative `pendingMouse*` accumulators and from `pendingBroadcast`, so a mouse
+    /// or keyboard report can never overwrite a pending gamepad state (and back).
+    private var pendingGamepad = GamepadPendingState()
     private var pendingMouseDX: Int32 = 0
     private var pendingMouseDY: Int32 = 0
     private var pendingMouseWheel: Int32 = 0
@@ -91,6 +103,11 @@ final class HIDPeripheral: NSObject, ObservableObject {
         isHIDServiceAdded = false
         isReadyToSendNotification = true
         pendingBroadcast = nil
+        pendingGamepad = GamepadPendingState()
+        // SPEC §5.2 F/L: after a radio reset the gamepad starts from neutral again, and a
+        // host has to subscribe again before any racing state may be sent to it.
+        gamepadSubscribedCentrals.removeAll()
+        cachedReports[ReportID.gamepad.rawValue] = GamepadReport.zero.data
         pendingMouseDX = 0
         pendingMouseDY = 0
         pendingMouseWheel = 0
@@ -137,6 +154,25 @@ final class HIDPeripheral: NSObject, ObservableObject {
 
     func sendSystemControl(_ report: SystemControlReport) {
         broadcast(report.data, reportID: .systemControl)
+    }
+
+    /// SPEC §5.2 E/F: the racing gamepad goes through the same `broadcast` /
+    /// `updateValue` notify path as every other report, but its backpressure is
+    /// latest-state-wins instead of delta accumulation.
+    func sendGamepad(_ report: GamepadReport) {
+        performanceMetrics.recordGeneratedReport()
+        let data = report.data
+        // SPEC §5.2 L: a gamepad state may only be cached when there is somebody to send it
+        // to. `cachedReports` is the payload a host *reads* back, so caching a non-neutral
+        // state while no central is subscribed to the gamepad characteristic would hand a
+        // still-held brake/gas, ability button or RX to the next session. A central that is
+        // still subscribed to keyboard/mouse is not a gamepad recipient, so nothing is
+        // cached or sent in that case.
+        let recipients = gamepadRecipients()
+        guard let char = charsByReportID[ReportID.gamepad.rawValue] else { return }
+        guard !recipients.isEmpty else { return }
+        cachedReports[ReportID.gamepad.rawValue] = data
+        _ = updateGamepadValue(data, for: char, recipients: recipients)
     }
 
     func toggleActive(_ uuid: UUID) {
@@ -311,6 +347,9 @@ final class HIDPeripheral: NSObject, ObservableObject {
         let consumerReportChar = makeReportChar(.consumerControl, type: .input)
         let mouseReportChar = makeReportChar(.mouse, type: .input)
         let keyboardReportChar = makeReportChar(.keyboard, type: .input)
+        // SPEC §5.2 F: created here, not once at launch, so the §5 "BLE advertising
+        // recovery" rebuild (PR #22) reinstalls the gamepad characteristic too.
+        let gamepadReportChar = makeReportChar(.gamepad, type: .input)
         let outputReportChar = CBMutableCharacteristic(
             type: HIDProfile.report,
             properties: [.read, .writeWithoutResponse, .write],
@@ -336,6 +375,7 @@ final class HIDPeripheral: NSObject, ObservableObject {
             consumerReportChar,
             mouseReportChar,
             keyboardReportChar,
+            gamepadReportChar,
             outputReportChar
         ]
 
@@ -346,6 +386,7 @@ final class HIDPeripheral: NSObject, ObservableObject {
         charsByReportID[ReportID.consumerControl.rawValue] = consumerReportChar
         charsByReportID[ReportID.mouse.rawValue] = mouseReportChar
         charsByReportID[ReportID.keyboard.rawValue] = keyboardReportChar
+        charsByReportID[ReportID.gamepad.rawValue] = gamepadReportChar
         charsByReportID[ReportID.keyboardLEDs.rawValue] = outputReportChar
 
         return service
@@ -439,6 +480,25 @@ final class HIDPeripheral: NSObject, ObservableObject {
         return accepted
     }
 
+    /// SPEC §5.2 E: same notify path as `updateValue`, but the rejected/backpressured
+    /// state is held in its own single `pendingGamepad` slot.
+    @discardableResult
+    private func updateGamepadValue(_ data: Data, for char: CBMutableCharacteristic,
+                                    recipients: [CBCentral]) -> Bool {
+        guard let pManager else { return false }
+        guard !recipients.isEmpty else { return false }
+        if !isReadyToSendNotification {
+            pendingGamepad.replace(data)
+            return false
+        }
+        let accepted = pManager.updateValue(data, for: char, onSubscribedCentrals: recipients)
+        if !accepted {
+            isReadyToSendNotification = false
+            pendingGamepad.replace(data)
+        }
+        return accepted
+    }
+
     private func drainPendingBroadcast() {
         guard let (data, char) = pendingBroadcast, let pManager else { return }
         pendingBroadcast = nil
@@ -448,6 +508,22 @@ final class HIDPeripheral: NSObject, ObservableObject {
         if !accepted {
             isReadyToSendNotification = false
             pendingBroadcast = (data, char)
+        }
+    }
+
+    private func drainPendingGamepad() {
+        // SPEC §5.2 E: this callback drains the pending broadcast and the pending mouse
+        // reports first. If either of them was rejected again, `isReadyToSendNotification` is
+        // already cleared, so the gamepad must not call updateValue and must not consume its
+        // one latest-wins state: the newest state stays pending for the next ready callback.
+        guard let data = pendingGamepad.take(ifReady: isReadyToSendNotification) else { return }
+        guard let char = charsByReportID[ReportID.gamepad.rawValue], let pManager else { return }
+        let recipients = gamepadRecipients()
+        guard !recipients.isEmpty else { return }
+        let accepted = pManager.updateValue(data, for: char, onSubscribedCentrals: recipients)
+        if !accepted {
+            isReadyToSendNotification = false
+            pendingGamepad.replace(data)
         }
     }
 
@@ -466,6 +542,15 @@ final class HIDPeripheral: NSObject, ObservableObject {
 
     private func activeRecipients() -> [CBCentral] {
         subscribedCentrals.keys
+            .filter { !inactiveCentrals.contains($0) }
+            .compactMap { centralObjects[$0] }
+    }
+
+    /// SPEC §5.2 L: the recipients of the racing report only. A central that is connected
+    /// and subscribed to keyboard/mouse is deliberately not a gamepad recipient, so its
+    /// presence cannot re-populate the gamepad cache.
+    private func gamepadRecipients() -> [CBCentral] {
+        gamepadSubscribedCentrals
             .filter { !inactiveCentrals.contains($0) }
             .compactMap { centralObjects[$0] }
     }
@@ -551,11 +636,26 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
         _trace("requested low connection latency for \(central.identifier)")
         subscribedCentrals[central.identifier, default: []].insert(characteristic.uuid)
         _trace("subscribe: \(central.identifier) -> \(characteristic.uuid)")
+        // SPEC §5.2 L: track the gamepad subscription by report ID, which is the only
+        // thing that distinguishes the gamepad characteristic from keyboard/mouse.
+        if reportID(forCharacteristic: characteristic) == ReportID.gamepad.rawValue {
+            gamepadSubscribedCentrals.insert(central.identifier)
+        }
         if let id = reportID(forCharacteristic: characteristic),
            let cached = cachedReports[id],
            let char = charsByReportID[id]
         {
-            _ = updateValue(cached, for: char)
+            if id == ReportID.gamepad.rawValue {
+                // SPEC §5.2 E: the bootstrap payload a just-subscribed host receives is a
+                // gamepad state like any other, so it must go through the single latest-wins
+                // slot. Sending it through generic `updateValue` would park it in the shared
+                // `pendingBroadcast` slot, which a later button release or unsubscribe cannot
+                // clear, and `drainPendingBroadcast()` would then replay a stale non-neutral
+                // state (held pedal / ability button / RX) into the next session.
+                _ = updateGamepadValue(cached, for: char, recipients: gamepadRecipients())
+            } else {
+                _ = updateValue(cached, for: char)
+            }
         } else if characteristic.uuid == HIDProfile.bootMouseInputReport, let bootMouseInputChar {
             _ = updateValue(MouseReport.zero.data, for: bootMouseInputChar)
         } else if characteristic.uuid == HIDProfile.bootKeyboardInputReport, let bootKeyboardInputChar {
@@ -571,6 +671,15 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
         didUnsubscribeFrom characteristic: CBCharacteristic
     ) {
         _trace("unsubscribe: \(central.identifier) <- \(characteristic.uuid)")
+        // SPEC §5.2 L: a host that stops subscribing to the gamepad must not be left
+        // holding a stick, pedal or button: drop the pending state and re-seed neutral.
+        // CoreBluetooth gives the peripheral role no disconnect callback at all, so this
+        // unsubscribe and `_resetForRestart` are the only real link-loss signals there are.
+        if reportID(forCharacteristic: characteristic) == ReportID.gamepad.rawValue {
+            gamepadSubscribedCentrals.remove(central.identifier)
+            pendingGamepad = GamepadPendingState()
+            cachedReports[ReportID.gamepad.rawValue] = GamepadReport.zero.data
+        }
         guard var chars = subscribedCentrals[central.identifier] else { return }
         chars.remove(characteristic.uuid)
         if chars.isEmpty {
@@ -588,6 +697,7 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
         isReadyToSendNotification = true
         drainPendingBroadcast()
         drainPendingMouse()
+        drainPendingGamepad()
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {

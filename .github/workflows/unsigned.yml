@@ -28,6 +28,18 @@ jobs:
           xcode-select -p
           bash ci_scripts/ci_post_clone.sh
 
+      - name: Test (SPEC §5.2 dependency-free Swift checks)
+        run: |
+          set -o pipefail
+          mkdir -p .build
+          swiftc -swift-version 6 \
+              BTRemote/LowEnergy/HIDReports.swift \
+              BTRemote/LowEnergy/HIDProfile.swift \
+              BTRemote/GyroAim.swift \
+              BTRemoteTests/GamepadTests.swift \
+              -o .build/gamepad-tests
+          .build/gamepad-tests
+
       - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
         run: |
           set -o pipefail

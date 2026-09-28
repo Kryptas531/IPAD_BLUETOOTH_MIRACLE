@@ -178,3 +178,101 @@ extension ConsumerReport {
     static let acHome = ConsumerReport(acUsageB: 0x23)
     static let acBack = ConsumerReport(acUsageB: 0x24)
 }
+
+// MARK: - Screamer racing gamepad (SPEC §5.2)
+
+/// One fixed-length gamepad input report: the whole controller state travels in a
+/// single BLE notification, so steering, both analog triggers and the ability
+/// buttons can be asserted at the same time (SPEC §5.2 C).
+///
+/// Field order and widths match the appended gamepad block of
+/// `HIDProfile.reportMapData`: `buttons` (bit0 A, bit1 B, bit2 X, bit3–bit7
+/// reserved) + four signed axis bytes + two unsigned trigger bytes = exactly
+/// 7 bytes, byte-aligned.
+///
+/// `data` carries NO leading Report ID byte: every HOGP path sends the bare report
+/// payload on its own Report characteristic and the Report ID is carried by that
+/// characteristic's Report Reference descriptor (`HIDProfile.reportReference`,
+/// value `id.descriptor(.input)` = `[7, 1]`), exactly like the existing reports.
+struct GamepadReport: Sendable, Equatable {
+    var buttons: GamepadButtons = []
+    /// Left stick X: steering, derived from the absolute gyro baseline (SPEC §5.2 H).
+    var lx: Int8 = 0
+    /// Left stick Y: reserved for this contract, stays neutral.
+    var ly: Int8 = 0
+    /// Right stick X: the floating free-surface drag (SPEC §5.2 I).
+    var rx: Int8 = 0
+    /// Right stick Y: reserved for this contract, stays neutral.
+    var ry: Int8 = 0
+    /// Analog trigger 1: brake (SPEC §5.2 J).
+    var lt: UInt8 = 0
+    /// Analog trigger 2: gas (SPEC §5.2 J).
+    var rt: UInt8 = 0
+
+    static let zero = GamepadReport()
+
+    var data: Data {
+        Data([
+            // SPEC §5.2 C: only the three defined ability bits go on the wire; a
+            // malformed/future rawValue must never leak the reserved bits 3–7.
+            buttons.rawValue & 0x07,
+            UInt8(bitPattern: Self.clampSigned(lx)),
+            UInt8(bitPattern: Self.clampSigned(ly)),
+            UInt8(bitPattern: Self.clampSigned(rx)),
+            UInt8(bitPattern: Self.clampSigned(ry)),
+            lt,
+            rt
+        ])
+    }
+
+    /// Signed axes use the `-127 ... 127` logical range declared by the report map:
+    /// every value is clamped to its field range before it is sent (same discipline
+    /// as `HIDInput.clamp`). The triggers are unsigned `0 ... 255` and need no clamp.
+    static func clampSigned(_ value: Int8) -> Int8 {
+        Int8(max(-127, min(127, Int(value))))
+    }
+}
+
+/// Ability buttons, one bit each (SPEC §5.2 J). bit0 = A, bit1 = B, bit2 = X;
+/// bit3–bit7 are reserved and are always sent 0 (`GamepadReport.data` masks them off,
+/// so even `GamepadButtons(rawValue: 0xFF)` cannot put a reserved bit on the wire).
+struct GamepadButtons: OptionSet, Sendable, Equatable {
+    let rawValue: UInt8
+    static let a = GamepadButtons(rawValue: 1 << 0)
+    static let b = GamepadButtons(rawValue: 1 << 1)
+    static let x = GamepadButtons(rawValue: 1 << 2)
+}
+
+/// Which analog trigger a control drives: brake → LT, gas → RT (SPEC §5.2 J).
+enum GamepadTrigger: String, Sendable {
+    case brake
+    case gas
+}
+
+/// SPEC §5.2 E: the gamepad is one latest-current-state-wins channel, kept
+/// deliberately separate from the relative `pendingMouse*` accumulators (replaying
+/// queued absolute stick positions would move Windows backwards). A state produced
+/// while the stack cannot accept a notification *replaces* the older pending state;
+/// exactly one newest state is ever held, never a queue and never a replay.
+struct GamepadPendingState: Sendable, Equatable {
+    var data: Data?
+
+    /// Record the newest state that could not be sent right now.
+    mutating func replace(_ newest: Data) {
+        data = newest
+    }
+
+    /// Take the pending state for one re-send attempt on `peripheralManagerIsReady`.
+    mutating func take() -> Data? {
+        defer { data = nil }
+        return data
+    }
+
+    /// SPEC §5.2 E: take only while the transport is still ready. Another report's drain
+    /// inside the same `peripheralManagerIsReadyToUpdateSubscribers` callback can already have
+    /// cleared readiness, so consuming the state then would silently drop the newest state.
+    mutating func take(ifReady ready: Bool) -> Data? {
+        guard ready else { return nil }
+        return take()
+    }
+}
