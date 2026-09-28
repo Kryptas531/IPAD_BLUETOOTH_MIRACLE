@@ -249,10 +249,13 @@ fixes `bfb3231` (`fix(game): iterate gamepad subscriber set [spec e8a62aa]`) and
 (`fix(game): hide racing controls outside racing [spec e8a62aa]`), all of which reference
 this spec SHA as required by the rule at the top of this file. `GamepadReport`, Report ID 7, the
 additive gamepad bytes in the report map and the racing UI therefore do exist in code. Nothing in
-this section may be described as built, tested or verified yet: CI for the current implementation/PR
-HEAD `4fa3506` is still pending (not green), and the §9 item 12 hardware acceptance — including the
-Windows descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still
-outstanding.
+this section may be described as built, tested or verified yet. The only workflow evidence so far is
+GitHub Actions run `36371784190`, which ran the original implementation commit `8e9cc6b` and
+completed **FAILED** in the app build step (`Set<UUID>.keys` — `gamepadSubscribedCentrals` is a
+`Set`, not a dictionary); its Test step passed. The follow-up source fixes `bfb3231` and `4fa3506`
+correct that build error and are not yet pushed or compiled, so there is no passing unsigned `.ipa`
+build of the repaired code. The §9 item 12 hardware acceptance — including the Windows
+descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still outstanding.
 - **A. Why the protected HID exception is technically necessary.** Screamer needs **analog**
   steering plus **analog** gas/brake plus separate action buttons, usable at the same time. The
   existing HID surface cannot express that: `MouseReport` (`BTRemote/LowEnergy/HIDReports.swift`)
@@ -810,8 +813,10 @@ outstanding exactly as described above. §5.2 is now implemented in source — c
 (`fix(game): iterate gamepad subscriber set [spec e8a62aa]`) and `4fa3506`
 (`fix(game): hide racing controls outside racing [spec e8a62aa]`), all following spec `e8a62aa` and
 following the §4 protected-path exception exactly as written there. Nothing in §5.2 is built, tested
-or verified yet: CI for the current implementation/PR HEAD `4fa3506` is still pending and §9 item 12
-is still outstanding.
+or verified yet: the only workflow that has run is `36371784190` at `8e9cc6b`, which FAILED in the
+app build (`Set<UUID>.keys`, Test step passed), and the follow-up fixes `bfb3231`/`4fa3506` are not
+yet pushed or compiled, so no passing unsigned `.ipa` exists for the repaired code. §9 item 12 is
+still outstanding.
 
 Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
@@ -914,7 +919,9 @@ can pass it.)
   fixed.
 - 12. Screamer racing gamepad (§5.2) — physical checks only, on the real iPad + Windows; the §5.2
   implementation exists in source (`8e9cc6b` + `bfb3231` + `4fa3506`) but is not CI-built or installed
-  yet, so do not run these before the CI-built implementation is installed on the iPad:
+  yet (the only workflow run so far, `36371784190` at `8e9cc6b`, FAILED in the app build with
+  `Set<UUID>.keys`, and the two follow-up fixes are not yet pushed or compiled), so do not run these
+  before a CI-built implementation of the repaired code is installed on the iPad:
   (a) after installing the new build, Windows enumerates the iPad as a device that also exposes a
   gamepad with analog axes (if it does not, remove the paired BTRemote HID device and re-pair once,
   §5.2 M, and record that as a descriptor-cache action, not a code fix);
@@ -969,8 +976,10 @@ can pass it.)
 - **Screamer racing gamepad (§5.2):** CONTRACT DEFINED AND IMPLEMENTED IN SOURCE — implementation
   commits `8e9cc6b` + fixes `bfb3231` + `4fa3506` [spec `e8a62aa`]; **not built, not tested, not
   verified**. `GamepadReport`, Report ID 7, the additive gamepad bytes in the report map (303 bytes
-  total) and the RACING input source now exist in code, but CI for the current implementation/PR HEAD
-  `4fa3506` is still pending. Do not describe any gamepad or Screamer behaviour as working.
+  total) and the RACING input source now exist in code, but the only workflow evidence is run
+  `36371784190` at `8e9cc6b`, which FAILED in the app build (`Set<UUID>.keys`; Test step passed), and
+  the follow-up fixes `bfb3231`/`4fa3506` are not yet pushed or compiled — there is no passing
+  unsigned build of the repaired code. Do not describe any gamepad or Screamer behaviour as working.
   See §5.2 N for the CI-vs-hardware claim boundary and §5.2 M for the Windows remove/re-pair
   fallback after the report-map change; §5.2 D is the only authorization to touch
   `BTRemote/LowEnergy/` / `BTRemote/HIDInput.swift` / `BTRemote/HIDReports.swift` for this, and
