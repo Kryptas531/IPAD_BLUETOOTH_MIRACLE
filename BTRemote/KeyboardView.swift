@@ -208,8 +208,10 @@ struct KeyboardView: View {
                             .padding(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             #if os(iOS)
-                                // SPEC §5.2 J: brake/gas, three ability buttons and RECENTER.
-                                racingControls
+                                if gameInputMode == .racing {
+                                    // SPEC §5.2 J: brake/gas, three ability buttons and RECENTER.
+                                    racingControls
+                                }
                             #endif
                         }
                     }
