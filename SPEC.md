@@ -72,7 +72,13 @@ sessions — ci-worker zone). The only exceptions any spec commit may grant are:
 `NSMotionUsageDescription` to `BTRemote/Info.plist` (§5.1 J), and adding
 `NSLocalNetworkUsageDescription` to `BTRemote/Info.plist` with exactly the text
 `BTRemote connects to your paired Windows PC on the local network to show app-specific controls.` (§7.2). No other
-key may be added there and everything else in those two files stays untouched.
+key may be added there and everything else in those two files stays untouched. A third exception is
+granted by §5.2 (Screamer racing gamepad): **additive-only** work in
+`BTRemote/LowEnergy/HIDReports.swift`, `BTRemote/LowEnergy/HIDProfile.swift`,
+`BTRemote/LowEnergy/HIDPeripheral.swift` and `BTRemote/HIDInput.swift` — no existing report, byte,
+struct or behaviour may change there, and `BTRemote/Classic/` stays untouched unless the implementer
+proves it is necessary (§5.2 D). No `Info.plist`/`entitlements.plist` change is expected for §5.2
+(the motion key needed for the racing gyro is already present from §5.1 J).
 
 ## 5. IMPLEMENTED and CONTRACT-DEFINED behavior
 (§5.1 code now EXISTS in current main — implemented per spec `b9caa6d` in `1284aca` with fixes
@@ -231,6 +237,185 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
 - **L. Verification:** implementation may claim CI only. Do not claim gyro aim works until the
   owner has run the §9 hardware acceptance including GAME gyro; until then it stays
   "implemented, physical verification pending".
+
+### 5.2 Screamer racing gamepad — CONTRACT DEFINED ONLY (not implemented)
+Spec-first contract for the operator-requested first playable **Screamer** (racing) gamepad surface.
+Defined at base `1519ee6b00cd408312f610fe2b88c29b2c79e344` (`origin/main`, merge of PR #22). This
+commit changes `SPEC.md` only: no `GamepadReport`, no gamepad report ID, no gamepad bytes and no
+racing UI exist in the code yet, and nothing in this section may be described as implemented,
+built or verified until the follow-up implementation commit references this spec SHA (rule at the
+top of this file).
+- **A. Why the protected HID exception is technically necessary.** Screamer needs **analog**
+  steering plus **analog** gas/brake plus separate action buttons, usable at the same time. The
+  existing HID surface cannot express that: `MouseReport` (`BTRemote/LowEnergy/HIDReports.swift`)
+  carries **relative** `dX`/`dY`/`wheel` byte deltas — "move by N counts", not "the stick is at
+  position P" — and one report describes exactly one device, so a stick position, a trigger value
+  and a button cannot be asserted concurrently. A relative mouse report therefore cannot encode
+  analog current-state axes, and a keyboard-keycode workaround (WASD/E/Q) is digital-only and would
+  collide with the shipped keyboard/"Extra keys" panels. The only correct fix is a **standard HID
+  gamepad report** (Usage Page Generic Desktop, Usage Game Pad `0x04`) so Windows enumerates the
+  iPad through its built-in HID game driver: no new dependency, no Windows-side software required
+  for the gamepad, no private iOS API, no second transport, no Game-Controller/MFi route.
+- **B. Report ID (chosen from real code, not assumed).** Inspect `BTRemote/LowEnergy/HIDProfile.swift`
+  (`enum ReportID`) before choosing. Verified at base `1519ee6`: `mouse = 1`, `keyboard = 2`,
+  `keyboardLEDs = 3`, `battery = 4`, `systemControl = 5`, `consumerControl = 6` — all taken. The
+  gamepad therefore takes the next unused **Report ID 7**. No existing report ID, report map byte,
+  struct or report semantics may change; the gamepad report is strictly additive and every existing
+  mouse/keyboard/keyboard-LED/battery/system-control/consumer report stays byte-identical.
+- **C. Report shape (static map, fixed length, signed and clamped fields).** Exactly one
+  fixed-length input report carries the whole controller state at once, so one BLE notification can
+  express stick + triggers + buttons together. Plan of record, fields in this order: `buttons`
+  bitmap (bit0 = A, bit1 = B, bit2 = X — **at least three** independent ability bits; bit3–bit7
+  reserved, always sent 0); `lx` signed (left-stick X, from gyro); `ly` signed (left-stick Y,
+  unused, stays neutral 0); `rx` signed (right-stick X, from the floating drag); `ry` signed
+  (right-stick Y, unused, stays neutral 0); `lt` unsigned (brake); `rt` unsigned (gas).
+  **There is no leading Report ID byte in the payload.** Verified in the existing code at `1519ee6`:
+  every HOGP path sends the bare report payload on its own Report characteristic
+  (`HIDPeripheral.swift:129,135,139` `broadcast(report.data, reportID: ...)`, `makeReportChar(_:,type:)`
+  at `HIDPeripheral.swift:354`, plain field `Data` in `BTRemote/LowEnergy/HIDReports.swift`), and the
+  Report ID is carried by that characteristic's **Report Reference descriptor**
+  (`HIDProfile.reportReference` 0x2908, value `id.descriptor(type)` = `[reportID, reportType]`), not
+  prepended to the value bytes. The gamepad must follow that same pattern: a dedicated Report
+  characteristic (0x2A4D) whose Report Reference descriptor is `[7, 1]`, and `GamepadReport.data` is
+  exactly the fixed-length field payload with **no ID prefix byte**.
+  Do not conflate two different sizes: the **report map** declares each field's bit length
+  (`Report Size` × `Report Count`), while the **characteristic value** carries whole bytes of
+  `GamepadReport.data`. With the field widths above (1 byte buttons + 4 signed axis bytes + 2
+  unsigned trigger bytes) the payload is exactly **7 bytes** and byte-aligned.
+  Fields must use **standard Generic Desktop usages**, and the right stick must not be conflated with
+  `Rz`: recommended arrangement is `lx` = X (0x30), `ly` = Y (0x31), `rx` = Rx (0x33), `ry` = Ry
+  (0x34) — one standard axis pair per stick — with `lt` = Z (0x32) and `rt` = Rz (0x35) as the two
+  analog trigger axes; buttons stay Usage Page Button (0x09 0x01 / 0x02 / 0x03, one bit each). This
+  arrangement is the recommended starting point, not an assumption: the implementation commit must
+  justify the final usage assignment against the **actual Windows mapping** observed on the real
+  device (which axes Windows/Screamer bind for the gamepad) and may re-order the fields there, as long
+  as each field keeps its own distinct standard usage and the four axes plus two triggers stay
+  independently addressable.
+  The report map block stays a **static, append-only** section of `HIDProfile.reportMapData` (the
+  existing 239 bytes stay unchanged) and the report must be a fixed-length, byte-aligned structure
+  that always fits one ATT notification. All axis fields are **signed** and every value must be
+  clamped to its field range before it is sent (same discipline as `HIDInput.clamp`,
+  `BTRemote/HIDInput.swift:67`).
+- **D. Protected-boundary exception (minimal, additive only).** This spec commit authorizes exactly
+  this protected-path work, and nothing more: add a `GamepadReport` struct (+ its `ReportID`
+  case) to `BTRemote/LowEnergy/HIDReports.swift`; append the additive gamepad block to
+  `HIDProfile.reportMapData` and extend `enum ReportID` in `BTRemote/LowEnergy/HIDProfile.swift`;
+  add the gamepad report characteristic, `sendGamepad(...)` and its cache entry in
+  `BTRemote/LowEnergy/HIDPeripheral.swift`; add the matching `sendGamepad` plumbing in
+  `BTRemote/HIDInput.swift`; add the racing input source and its on-screen controls
+  (`BTRemote/GyroAim.swift` `GameInputMode`, `BTRemote/KeyboardView.swift` temporary GAME chrome).
+  §5.1 J stays fully in force: the existing gyro-aim code, the existing report structs, the existing
+  report-map bytes and the existing mouse/keyboard/consumer/Direct-Input paths must not change.
+  Where §5.1 J says those files stay untouched, that stays true for everything already in them; the
+  additive additions listed above are the only exception and only for this contract.
+  `BTRemote/Classic/` is not to be modified unless a later finding **proves** the gamepad cannot
+  work over the BLE path without it — that would need its own preceding spec change. No new
+  third-party dependency and no external/private-API route.
+- **E. Gamepad backpressure = current state, latest state wins.** The existing mouse path
+  *accumulates* deltas (`pendingMouseDX/DY/Wheel`, `HIDPeripheral.swift:52,117`) because mouse
+  reports are relative; that model must not be reused for the gamepad, because replaying queued
+  absolute stick positions would move Windows backwards. The gamepad must therefore keep a **single
+  latest-wins current state**: the app holds one current `GamepadReport`; if a send is not accepted
+  (`updateValue(...)` returns false / `isReadyToSendNotification == false`), do not enqueue a second
+  copy and do not reuse the `pendingMouse*` accumulators — keep that one newest state pending and
+  re-send it when `peripheralManagerIsReadyToUpdateSubscribers` fires, so Windows always converges
+  on the newest state. No smoothing, filtering, interpolation, cadence coupling, artificial delay or
+  other latency may be added to this path (same rule as §5.1 K).
+- **F. Required integration points (all of them).** Implementation must wire the new report through
+  the existing lifecycle instead of adding a parallel path: `installServices()` /
+  `buildHIDService(...)` must create the gamepad characteristic with `makeReportChar(.gamepad,
+  type: .input)` and register it in `charsByReportID`; `peripheralManager(_:didReceiveRead:)` /
+  `readValue(forRequest:)` must answer a read of that characteristic with the current cached
+  gamepad report; `sendGamepad` must go through the existing `broadcast(_:reportID:)` /
+  `updateValue(...)` notify path; `cachedReports` (`HIDPeripheral.swift:44`) must be seeded with the
+  **neutral** gamepad report (axes 0, triggers 0, all bits released) alongside the existing four
+  entries, so a host reading before the first send reads neutral; and `_resetForRestart()` plus the
+  §5 "BLE advertising recovery" flow (PR #22: spec `4370704`, commits `8a82419`/`d651414`) must keep
+  working exactly as specified — which is precisely why the gamepad report has to be created inside
+  `installServices()` and not once at launch.
+- **G. Racing mode is nested under GAME (no new top-level mode).** The top bar stays
+  `GAME | CONTROL | TOUCH`; nothing may add a fourth top-level mode. Inside the temporary GAME
+  chrome the input-source picker gains a nested **`RACING`** choice (`GameInputMode.racing`) next to
+  the existing `touch | gyro | hybrid`; those three (the AIM / gyro-aim path of §5.1) keep their
+  behaviour, labels, sensitivity defaults, persistence and unavailable-status handling exactly as
+  implemented, and RACING must not be achieved by changing them. Default selected source stays
+  `touch` on first launch, and any already-persisted `gameInputMode` value must still resolve
+  (upgrade rule as in §7.1 A).
+- **H. Steering = absolute gyro orientation, RECENTER → LX.** RACING steering must not reuse the
+  §5.1 incremental-delta output: it is an **absolute** axis deflection computed from the device
+  attitude **relative to the baseline established by RECENTER**, written into the gamepad's
+  left-stick X field. On RACING activation, on app reactivation, on returning to GAME and on
+  pressing RECENTRE, the current attitude becomes the baseline and no movement is emitted; turning
+  the iPad back to the recorded pose must return the stick to centre (0), never a drifted position.
+  Reuse the existing single device-motion pipeline (`GyroAimController` / `CMMotionManager`,
+  `.xArbitraryZVertical`) — no second motion manager and no new dependency. Initial tuning (the
+  operator-requested starting values for the first playable build, to be corrected on hardware, not
+  final): **deadzone ≈2°** of yaw from the baseline → axis stays 0; **full lock ≈30–35°** (start at
+  32°) → full-scale deflection; **expo ≈1.3–1.5** (start at 1.4). The concrete axis index / byte
+  width / sign mapping — which rotation-vector component of `GyroAimController.handle` is the
+  horizontal one and which sign means "turn right" — must be **determined by reading the real
+  code as written at the implementation commit and confirmed on hardware**, not assumed from this
+  document; the binding requirement is the semantic (yaw relative
+  to the recentered baseline → signed left-stick X, same handedness the aim path already produces),
+  not a guessed byte layout. If device motion is unavailable, produce no steering input and show the
+  existing "unavailable" chrome (§5.1 H); never fall back to keycodes for steering.
+- **I. Floating touch = independent raw UIKit drag → RX.** RACING keeps an **independent, floating**
+  raw-UIKit touch area that covers **nearly all of the remaining free racing surface** — every part
+  of the GAME surface that is not a racing button/trigger hit region and not the §7.1 CONTROL
+  trackpad — and is therefore **not** restricted to a right-side region only (same high-fidelity
+  handling as §5 "GAME high-fidelity input": `touchesBegan`/`touchesMoved(_:with:)` with
+  `UIEvent.coalescedTouches(for:)`, predicted touches not used). It is not the §7.1 CONTROL trackpad
+  and not the left/gyro area, so a thumb drag can drive the second stick at the same time as
+  steering, gas/brake and buttons. Each touch's own `touchesBegan` point is its **origin** (the
+  surface floats, there is no drawn pad to aim at); displacement from that origin is scaled by the
+  initial tuning — **deadzone ≈8 pt**, **full travel ≈100 pt** (requested 80–150 pt class) →
+  full-scale right-stick X — into the gamepad's right-stick X field; on `touchesEnded` or
+  `touchesCancelled` that field returns to 0 immediately.
+  Hit-region ownership: a touch that **begins** inside a button/trigger hit region belongs to that
+  control for its whole life and must never drive RX, even if the finger later slides across the
+  racing surface; a touch that begins on the free racing surface keeps driving RX even if it later
+  slides over a button/trigger region. The racing surface must not intercept any §7.1 CONTROL
+  gesture, §5 keyboard or Direct-Input touch (control hit areas are disjoint from the pad and from
+  each other; only actual hit areas may intercept, §7.1 D).
+- **J. Racing controls: LT = brake, RT = gas, ≥3 ability buttons.** Gas is the **RT** field, brake
+  is the **LT** field (two separate on-screen controls on the racing surface, two separate fields of
+  the same report, so both can be present at once and each releases independently). At least
+  **three** independent ability button bits must exist (initial assignment A, B, X) and each must be
+  assertable simultaneously with the others, with either trigger and with the steering axes in one
+  report. All racing buttons are momentary: pressed = bit set, released = bit cleared, and the
+  release report must be sent even when the earlier press was never acknowledged by the host
+  (latest-state-wins, E).
+- **K. Out of scope: no remapping, no settings, no layout work.** No user-configurable button/axis
+  remapping, no per-game or per-app layout work, no new Settings fields, no use of the §7.2 JSON
+  layout document for gamepad actions, no new input channel, no dictation or Touch-digitizer work.
+  The tuning values in H and I are compile-time defaults for the first playable build. Nothing
+  already shipped (§5, §7, §7.1, §7.2 — CONTROL pad, Text entry, Extra keys, More shortcuts, Windows
+  helper) may be removed, relabelled or moved to make room for RACING.
+- **L. Neutralization lifecycle (every case must be handled).** Windows must never be left with a
+  stuck axis, trigger or button. A full **neutral** gamepad report (axes 0, triggers 0, all bits
+  released, cached as neutral too) must be sent whenever: RACING is deselected in the GAME chrome
+  (back to Touch/Gyro/Hybrid); the mode leaves GAME (to CONTROL or TOUCH); the app resigns active,
+  is backgrounded or suspended; the floating drag ends or is cancelled (I); any ability button or
+  trigger is released; BLE disconnects, the central unsubscribes, or Bluetooth leaves `.poweredOn`
+  and later returns (restart/re-install path, F); or device motion becomes unavailable (H). When
+  several sources are held at once, releasing one must not clear another's still-held state, and
+  the clearing report must be the newest state (E).
+- **M. Windows descriptor cache / re-pair fallback.** Adding a report changes the byte length and
+  content of the HID report map, and a Windows host that already paired the device may keep the old
+  cached descriptor and not show the new gamepad. Documented fallback for the implementation and for
+  §9: if Windows does not enumerate the gamepad after the update, remove the paired BTRemote HID
+  device in Windows Bluetooth settings and pair it again. That is a consequence of changing a HID
+  descriptor, **not** a regression of §5 "BLE advertising recovery": after the report is installed
+  the app must still recover from a Bluetooth power cycle without a restart and without a re-pair.
+- **N. Tests and claim boundaries.** Implementation must add dependency-free coverage for the
+  byte-exact gamepad encoding (field order, widths, signedness, clamping at full scale) and for
+  latest-state-wins backpressure (a second state produced before the notification is acknowledged
+  replaces the pending one; no duplicated, queued or replayed gamepad reports). Swift cannot be
+  compiled on this Windows machine (no Xcode/swift, §12), so implementation may claim **CI build
+  only**; it must not claim that Screamer recognises the device, that steering / gas / brake /
+  ability buttons behave, or any latency or feel result. Until the owner completes the new §9 item
+  12 hardware session, this stays "contract defined" — and after implementation, "implemented,
+  physical verification pending". No PR text may assert gamepad functionality as verified.
 
 ## 6. MEASURED facts
 (From the one good physical run, iPad Air 11" M2 2024 + Windows, 2026-09-20 — do not extend these.)
@@ -609,6 +794,13 @@ user-editable JSON layout document from §7.2 F. Nothing in §7.2 may be called 
 the C# helper builds and its dependency-free tests pass locally (67 checks), Swift cannot be
 compiled on this Windows machine so the iOS client is unbuilt and its CI build is still pending,
 and §9 item 10 stays outstanding.
+The next bounded task is the operator-requested **Screamer racing gamepad** contract (§5.2): the
+additive Report ID 7 composite gamepad report and the nested RACING sub-mode under GAME. It is a
+new item added to the list above and does not re-order it: stage 5 (§7.2) verification stays
+outstanding exactly as described above. Nothing in §5.2 is implemented, built or tested yet — the
+implementation commit must cite §5.2 and follow the §4 protected-path exception exactly as written
+there.
+
 Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
 dictation contract is written here.
@@ -708,8 +900,26 @@ can pass it.)
   Afterwards re-run a spot check from items 4–7 (mouse move/tap/scroll, typing) to confirm nothing
   else changed. Do not record this as a latency result or as proof that all disconnect causes are
   fixed.
+- 12. Screamer racing gamepad (§5.2) — physical checks only, on the real iPad + Windows; nothing in
+  §5.2 exists in code yet, so do not run these before the implementation commit lands:
+  (a) after installing the new build, Windows enumerates the iPad as a device that also exposes a
+  gamepad with analog axes (if it does not, remove the paired BTRemote HID device and re-pair once,
+  §5.2 M, and record that as a descriptor-cache action, not a code fix);
+  (b) in Screamer's controls the device's left stick steers: rotate the iPad left/right from the
+  recentered pose and confirm the game's steering follows, then press RECENTRE and confirm the stick
+  returns to centre without emitting movement;
+  (c) a drag anywhere on the free racing surface drives the second stick **independently while
+  steering** (multitouch — the drag origin is wherever the thumb lands, no drawn pad; a touch begun
+  on a button/trigger keeps driving that control instead);
+  (d) right on-screen control = gas (**RT**), left on-screen control = brake (**LT**) in Screamer;
+  (e) at least three ability buttons work and can be pressed together with each other, with a
+  trigger and with steering;
+  (f) releasing every source, and leaving RACING or GAME, leaves nothing stuck — steering recentres,
+  gas, brake and all buttons release;
+  (g) afterwards re-run a spot check from items 4–7 and item 11 to confirm the existing mouse,
+  keyboard, DECK, Direct Input and advertising-recovery behaviour is completely unchanged.
 - Ready = all mandatory items (former MVP table 1–14) plus items 9–11 work AND lock-screen
-  acceptance passes.
+  acceptance passes; item 12 becomes mandatory once the §5.2 implementation lands.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
@@ -743,6 +953,13 @@ can pass it.)
   CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
   `3a3ddf2`). Physical verification stays pending per §9.
+- **Screamer racing gamepad (§5.2):** CONTRACT DEFINED ONLY — not implemented, not built, not
+  tested, not verified. No `GamepadReport`, no Report ID 7, no gamepad bytes in the report map and
+  no RACING input source exist at `1519ee6`. Do not describe any gamepad or Screamer behaviour as
+  working. See §5.2 N for the CI-vs-hardware claim boundary and §5.2 M for the Windows remove/re-pair
+  fallback after the report-map change; §5.2 D is the only authorization to touch
+  `BTRemote/LowEnergy/` / `BTRemote/HIDInput.swift` / `BTRemote/HIDReports.swift` for this, and
+  `BTRemote/Classic/` stays untouched unless proven otherwise.
 - **Native dictation RU/EN:** not implemented (🎙 placeholder).
 - **Windows helper and foreground-aware layouts (§7.2):** implemented and committed in `c8babce`,
   **not verified**.
