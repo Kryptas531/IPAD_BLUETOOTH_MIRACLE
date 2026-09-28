@@ -259,8 +259,17 @@ step passed, and `bfb3231`/`4fa3506` corrected that build error.
 CI build is not functional verification. The §9 item 12 hardware acceptance — including the Windows
 descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still outstanding,
 so nothing in this section may be described as working on hardware yet.
-**Not implemented:** §5.2 H has been re-specified (steering = signed rotation about the device
-screen-normal, see H); no code implements that mapping yet and no steering-fix tests exist yet.
+**Source implemented, CI and physical verification outstanding:** §5.2 H has been re-specified
+(steering = signed rotation about the device screen-normal, see H) and that mapping is now
+implemented in source by `7be857e` (`fix(game): restore wheel steering and recenter [spec 9adfd9d]`,
+branch `fix/racing-wheel-steering`), which follows spec commit `9adfd9d` as required by the rule at
+the top of this file. The dependency-free regression tests required by §5.2 N are added in
+`BTRemoteTests/GamepadTests.swift` and call that same production seam
+(`RacingMapper.screenNormalDegrees`, `RacingSourceState.recenterSteering()` in
+`BTRemote/GyroAim.swift`). The CI evidence recorded above belongs to the pre-wheel-fix code:
+neither `7be857e` nor those tests has been compiled or run on this Windows host (no Xcode/swift,
+§12) and no CI run has built them yet, so the wheel steering/recenter work stays
+"implemented in source, CI and physical verification pending".
 - **A. Why the protected HID exception is technically necessary.** Screamer needs **analog**
   steering plus **analog** gas/brake plus separate action buttons, usable at the same time. The
   existing HID surface cannot express that: `MouseReport` (`BTRemote/LowEnergy/HIDReports.swift`)
@@ -450,16 +459,19 @@ screen-normal, see H); no code implements that mapping yet and no steering-fix t
   steering / gas / brake / ability buttons behave, or any latency or feel result. Until the owner
   completes the new §9 item 12 hardware session, this stays "implemented in source, CI-built, physical
   verification pending". No PR text may assert gamepad functionality as verified.
-  The steering change in H **requires** (such tests do not exist yet) deterministic quaternion-level
-  coverage in the same dependency-free harness, written against the actual production mapping — the
-  quaternion→steering arithmetic must therefore live in a pure, dependency-free place that the
-  harness compiles without UIKit/CoreMotion. Required cases: clockwise and counterclockwise
+  The steering change in H **required** deterministic quaternion-level coverage in the same
+  dependency-free harness, written against the actual production mapping; that arithmetic now lives
+  in the pure, dependency-free `BTRemote/GyroAim.swift` (`RacingMapper.screenNormalDegrees`,
+  `RacingSourceState.recenterSteering()`) which the harness compiles without UIKit/CoreMotion, and
+  the tests are now written in `BTRemoteTests/GamepadTests.swift` against that production code.
+  Required cases: clockwise and counterclockwise
   rotation about the device screen normal, a neutral and a held starting orientation, an exact
   return to the recorded baseline, q/-q equivalent orientations, RECENTER clearing LX while the held
   pedals and ability buttons are preserved, and a pure device-X (somersault) rotation not producing
-  steering. Swift still cannot be compiled on this Windows machine (§12), so those tests are to be
-  written and run by CI, and they would prove the mapping only — not what Windows or Steam does with
-  the reported axes.
+  steering — every one of those cases is now covered by a check in that harness. Swift still cannot be
+  compiled on this Windows machine (§12), so those tests have not been compiled or run locally: they
+  are to be compiled and run by CI, and they prove the mapping only — not what Windows or Steam does
+  with the reported axes.
 
 ## 6. MEASURED facts
 (From the one good physical run, iPad Air 11" M2 2024 + Windows, 2026-09-20 — do not extend these.)

@@ -3,11 +3,15 @@ import CoreGraphics
 
 // SPEC §5.2 N — dependency-free coverage for the Screamer racing gamepad:
 // the byte-exact gamepad encoding (field order, widths, signedness, clamping at
-// full scale), the latest-state-wins backpressure rule and the §5.2 L lifecycle rule
+// full scale), the §5.2 H wheel steering mapping (`RacingMapper.screenNormalDegrees`
+// + `RacingSourceState.recenterSteering()`, the committed wheel fix `7be857e`
+// [spec 9adfd9d]), the latest-state-wins backpressure rule and the §5.2 L lifecycle rule
 // (BLE loss neutralizes every racing source; a disconnected state cannot be cached or
 // carried into a fresh racing session).
 //
-// Swift cannot be compiled on the Windows host used for this work (§12), so this
+// The wheel-steering and RECENTER coverage below is written against the committed production
+// mapping (`7be857e` [spec 9adfd9d]) and has NOT been compiled or run locally: Swift cannot be
+// compiled on the Windows host used for this work (§12), so this
 // harness is built and run by CI: see the "Test" step in
 // `.github/workflows/unsigned.yml`. Like `companion/WindowsForeground.Tests` it uses
 // no test framework and no third-party dependency — the production files are
@@ -86,6 +90,38 @@ struct GamepadTests {
             if actual != expected {
                 failures.append("\(name): expected \(expected), got \(actual)")
             }
+        }
+
+        func expectClose(_ actual: Double, _ expected: Double, _ tolerance: Double,
+                         _ name: String) {
+            checks += 1
+            if !(abs(actual - expected) <= tolerance) || actual.isNaN {
+                failures.append("\(name): expected \(expected) ±\(tolerance), got \(actual)")
+            }
+        }
+
+        // The two helpers below only BUILD inputs for the production mapping. The
+        // quaternion→steering arithmetic under test is never recomputed in this harness.
+
+        /// A unit quaternion for a right-hand rotation of `degrees` about `axis`.
+        func quaternion(_ axisX: Double, _ axisY: Double, _ axisZ: Double,
+                        degrees: Double) -> RacingQuaternion {
+            let half = degrees * Double.pi / 360
+            let s = sin(half)
+            let n = sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ)
+            return RacingQuaternion(w: cos(half), x: axisX * s / n, y: axisY * s / n,
+                                    z: axisZ * s / n)
+        }
+
+        /// Hamilton product `a ⊗ b`: composes a pose that is `degrees` of rotation about
+        /// an axis of a nonidentity baseline.
+        func multiply(_ a: RacingQuaternion, _ b: RacingQuaternion) -> RacingQuaternion {
+            RacingQuaternion(
+                w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+                x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+            )
         }
 
         // MARK: report IDs and Report Reference (SPEC §5.2 B/C)
@@ -239,6 +275,137 @@ struct GamepadTests {
             Array(full.gamepad.data),
             [0x01, 0x81, 0x00, 0x00, 0x00, 0x00, 0xFF],
             "steering, gas and an ability button are held in one report"
+        )
+
+        // MARK: wheel steering = signed rotation about the device screen-normal (SPEC §5.2 H/N)
+
+        // These checks call the ACTUAL production mapping the iOS build uses
+        // (`RacingMapper.screenNormalDegrees` and `RacingSourceState.recenterSteering()`, the
+        // committed wheel fix `7be857e` [spec 9adfd9d]). Nothing here re-implements the
+        // quaternion→steering arithmetic; the helpers above only build the inputs.
+
+        let neutralPose = RacingQuaternion(w: 1, x: 0, y: 0, z: 0)
+        let heldPose = multiply(quaternion(1, 0, 0, degrees: 40),
+                                quaternion(0, 0, 1, degrees: 25))
+
+        // SPEC §5.2 H: a clockwise turn as the user faces the screen (a right-hand rotation
+        // about the negated device screen normal) must produce POSITIVE steering.
+        expectClose(RacingMapper.screenNormalDegrees(from: neutralPose,
+                                                    to: quaternion(0, 0, -1, degrees: 32)),
+                    RacingTuning.gyroFullLockDegrees, 1e-6,
+                    "a clockwise turn about the device screen-normal is positive steering")
+        // The opposite (counterclockwise) turn must produce NEGATIVE steering.
+        expectClose(RacingMapper.screenNormalDegrees(from: neutralPose,
+                                                    to: quaternion(0, 0, 1, degrees: 32)),
+                    -RacingTuning.gyroFullLockDegrees, 1e-6,
+                    "a counterclockwise turn about the device screen-normal is negative steering")
+
+        // SPEC §5.2 H/N: a neutral and a held starting orientation. A device that never moved
+        // from the recorded pose maps to exactly zero, so the stick cannot stay deflected.
+        expectEqual(RacingMapper.screenNormalDegrees(from: neutralPose, to: neutralPose), 0,
+                    "a device that never moved from the recorded neutral pose maps to zero")
+        expectEqual(RacingMapper.screenNormalDegrees(from: heldPose, to: heldPose), 0,
+                    "a device that never moved from the recorded held pose maps to zero")
+        let turnedFromHeld = multiply(heldPose, quaternion(0, 0, -1, degrees: 32))
+        let firstSteeringSample = RacingMapper.screenNormalDegrees(from: heldPose,
+                                                                  to: turnedFromHeld)
+        expectClose(firstSteeringSample, RacingTuning.gyroFullLockDegrees, 1e-6,
+                    "a clockwise turn from a nonidentity (held) baseline is still positive")
+        expectEqual(RacingMapper.screenNormalDegrees(from: heldPose, to: turnedFromHeld),
+                    firstSteeringSample,
+                    "repeating the same held pose gives the same steering angle")
+
+        // SPEC §5.2 H: because the axis is the device's own screen normal the result must not
+        // depend on how the device is held, so both landscape orientations stay symmetric.
+        let landscapeLeft = quaternion(0, 0, 1, degrees: 90)
+        let landscapeRight = quaternion(0, 0, -1, degrees: 90)
+        expectClose(RacingMapper.screenNormalDegrees(from: landscapeLeft,
+                                                    to: multiply(landscapeLeft,
+                                                                quaternion(0, 0, -1,
+                                                                          degrees: 32))),
+                    RacingTuning.gyroFullLockDegrees, 1e-6,
+                    "landscape left: the same clockwise turn gives the same positive steering")
+        expectClose(RacingMapper.screenNormalDegrees(from: landscapeRight,
+                                                    to: multiply(landscapeRight,
+                                                                quaternion(0, 0, -1,
+                                                                          degrees: 32))),
+                    RacingTuning.gyroFullLockDegrees, 1e-6,
+                    "landscape right: the same clockwise turn gives the same positive steering")
+
+        // SPEC §5.2 N: `q` and `-q` describe the same rotation, so a turn handed to the
+        // production mapping in either representation must map identically.
+        let turnedNegated = RacingQuaternion(w: -turnedFromHeld.w, x: -turnedFromHeld.x,
+                                            y: -turnedFromHeld.y, z: -turnedFromHeld.z)
+        expectEqual(RacingMapper.screenNormalDegrees(from: heldPose, to: turnedNegated),
+                    firstSteeringSample,
+                    "q and -q (the same rotation) map to the same steering angle")
+
+        // SPEC §5.2 H/N: a pure device-X (somersault) rotation is not steering, from either a
+        // neutral or a nonidentity baseline.
+        expectEqual(RacingMapper.screenNormalDegrees(from: neutralPose,
+                                                    to: quaternion(1, 0, 0, degrees: 45)), 0,
+                    "a pure device-X (somersault) rotation produces no steering")
+        expectClose(RacingMapper.screenNormalDegrees(from: heldPose,
+                                                    to: multiply(heldPose,
+                                                                quaternion(1, 0, 0,
+                                                                          degrees: 45))),
+                    0, 1e-9,
+                    "a pure device-X rotation from a held pose also produces no steering")
+
+        // SPEC §5.2 H: the angle produced by the real mapping then goes through the existing
+        // deadzone/full-lock/expo ramp.
+        let deadzoneSample = RacingMapper.screenNormalDegrees(
+            from: neutralPose, to: quaternion(0, 0, -1, degrees: 1)
+        )
+        expectEqual(RacingMapper.axis(fromAngle: deadzoneSample), 0,
+                    "a 1 degree quaternion-level turn stays inside the steering deadzone")
+        let fullLockSample = RacingMapper.screenNormalDegrees(
+            from: neutralPose, to: quaternion(0, 0, -1, degrees: 32)
+        )
+        expectEqual(RacingMapper.axis(fromAngle: fullLockSample), 127,
+                    "a 32 degree quaternion-level turn gives full-scale positive left-stick X")
+        let beyondLockSample = RacingMapper.screenNormalDegrees(
+            from: neutralPose, to: quaternion(0, 0, -1, degrees: 45)
+        )
+        expectEqual(RacingMapper.axis(fromAngle: beyondLockSample), 127,
+                    "a rotation beyond full lock clamps to full scale")
+        let ccwLockSample = RacingMapper.screenNormalDegrees(
+            from: neutralPose, to: quaternion(0, 0, 1, degrees: 32)
+        )
+        expectEqual(RacingMapper.axis(fromAngle: ccwLockSample), -127,
+                    "a 32 degree counterclockwise turn gives full-scale negative left-stick X")
+
+        // MARK: RECENTER clears LX and preserves every other held field (SPEC §5.2 H/E/J/L)
+
+        // This exercises the production operation `RacingSourceState.recenterSteering()`, the
+        // one `GyroAimController.recenter()` calls, so the "clear steering, keep everything
+        // else" rule is not duplicated in the harness.
+        var recentered = RacingSourceState()
+        recentered.setButton(.a, pressed: true)
+        recentered.setButton(.b, pressed: true)
+        recentered.setButton(.x, pressed: true)
+        recentered.setTrigger(.brake, pressed: true)
+        recentered.setTrigger(.gas, pressed: true)
+        recentered.beginTouch(at: CGPoint(x: 40, y: 20))
+        recentered.moveTouch(to: CGPoint(x: 140, y: 20))
+        recentered.gamepad.lx = RacingMapper.axis(fromAngle: fullLockSample)
+        expectEqual(recentered.gamepad.lx, 127,
+                    "a full-lock turn holds LX at full scale before RECENTER")
+        recentered.recenterSteering()
+        expectEqual(recentered.gamepad.lx, 0,
+                    "RECENTER clears a steering deflection that was already transmitted")
+        expectEqual(recentered.gamepad.rx, 127, "RECENTER keeps the held floating drag")
+        expectEqual(recentered.gamepad.lt, 255, "RECENTER keeps the held brake pedal")
+        expectEqual(recentered.gamepad.rt, 255, "RECENTER keeps the held gas pedal")
+        let heldButtonsAfterRecenter: GamepadButtons = [.a, .b, .x]
+        expect(recentered.gamepad.buttons == heldButtonsAfterRecenter,
+               "RECENTER keeps every held ability button")
+        expect(recentered.touchOrigin != nil, "RECENTER keeps the floating drag origin")
+        expectEqual(recentered.heldButtons.count, 3, "RECENTER keeps all three ability bits")
+        expectEqual(
+            Array(recentered.gamepad.data),
+            [0x07, 0x00, 0x00, 0x7F, 0x00, 0xFF, 0xFF],
+            "after RECENTER one report still carries the drag, both pedals and all buttons"
         )
 
         // MARK: BLE link loss and a fresh racing session (SPEC §5.2 L)

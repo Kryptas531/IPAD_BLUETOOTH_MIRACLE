@@ -172,6 +172,15 @@ struct RacingSourceState: Sendable {
         }
     }
 
+    /// SPEC §5.2 H: RECENTRE re-baselines steering without disturbing anything else the
+    /// player holds. A steering deflection that was already transmitted is cleared by writing
+    /// LX = 0 while RX, both pedals, the floating drag and every held ability button keep
+    /// their values. `GyroAimController.recenter()` calls this so the rule is exercised by
+    /// the production code path instead of being duplicated in the tests (SPEC §5.2 N).
+    mutating func recenterSteering() {
+        gamepad.lx = 0
+    }
+
     /// SPEC §5.2 L: put every racing source back to neutral; the caller sends that neutral
     /// report as the newest state.
     mutating func neutralize() {
@@ -281,7 +290,7 @@ struct RacingSourceState: Sendable {
             // values the racing sources still hold.
             guard mode == .racing else { return }
             let held = racing.gamepad
-            racing.gamepad.lx = 0
+            racing.recenterSteering()
             guard racing.gamepad != held else { return }
             hid.sendGamepad(racing.gamepad)
         }
