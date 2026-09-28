@@ -240,7 +240,7 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
   owner has run the §9 hardware acceptance including GAME gyro; until then it stays
   "implemented, physical verification pending".
 
-### 5.2 Screamer racing gamepad — CONTRACT DEFINED AND IMPLEMENTED IN SOURCE (CI and physical acceptance pending)
+### 5.2 Screamer racing gamepad — CONTRACT DEFINED AND IMPLEMENTED (CI build passed; physical acceptance pending)
 Spec-first contract for the operator-requested first playable **Screamer** (racing) gamepad surface.
 The contract was defined at base `1519ee6b00cd408312f610fe2b88c29b2c79e344` (`origin/main`, merge of
 PR #22) by spec commit `e8a62aa`, which changed `SPEC.md` only. The contract is now implemented in
@@ -248,14 +248,17 @@ source by `8e9cc6b` (`feat(game): implement Screamer racing gamepad [spec e8a62a
 fixes `bfb3231` (`fix(game): iterate gamepad subscriber set [spec e8a62aa]`) and `4fa3506`
 (`fix(game): hide racing controls outside racing [spec e8a62aa]`), all of which reference
 this spec SHA as required by the rule at the top of this file. `GamepadReport`, Report ID 7, the
-additive gamepad bytes in the report map and the racing UI therefore do exist in code. Nothing in
-this section may be described as built, tested or verified yet. The only workflow evidence so far is
-GitHub Actions run `36371784190`, which ran the original implementation commit `8e9cc6b` and
-completed **FAILED** in the app build step (`Set<UUID>.keys` — `gamepadSubscribedCentrals` is a
-`Set`, not a dictionary); its Test step passed. The follow-up source fixes `bfb3231` and `4fa3506`
-correct that build error and are not yet pushed or compiled, so there is no passing unsigned `.ipa`
-build of the repaired code. The §9 item 12 hardware acceptance — including the Windows
-descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still outstanding.
+additive gamepad bytes in the report map and the racing UI therefore do exist in code, and that code
+is now **CI-built**: workflow_dispatch run `36372951698` passed Test → Build → Package → Upload on
+implementation HEAD `6c746a6f14a25c08063694b21796f667471a7602`, and push run `36373205510` passed the
+same jobs on merge commit `30ccaaa3be6f902a4eb91f7954f322d508f830c6` (PR #23). The unsigned
+`BTRemote.ipa` artifact from that build is available in the workflow artifacts.
+Historical, superseded: the earlier run `36371784190` at `8e9cc6b` completed **FAILED** in the app
+build step (`Set<UUID>.keys` — `gamepadSubscribedCentrals` is a `Set`, not a dictionary); its Test
+step passed, and `bfb3231`/`4fa3506` corrected that build error.
+CI build is not functional verification. The §9 item 12 hardware acceptance — including the Windows
+descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still outstanding,
+so nothing in this section may be described as working on hardware yet.
 - **A. Why the protected HID exception is technically necessary.** Screamer needs **analog**
   steering plus **analog** gas/brake plus separate action buttons, usable at the same time. The
   existing HID surface cannot express that: `MouseReport` (`BTRemote/LowEnergy/HIDReports.swift`)
@@ -418,15 +421,15 @@ descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test 
   device in Windows Bluetooth settings and pair it again. That is a consequence of changing a HID
   descriptor, **not** a regression of §5 "BLE advertising recovery": after the report is installed
   the app must still recover from a Bluetooth power cycle without a restart and without a re-pair.
-- **N. Tests and claim boundaries.** Implementation must add dependency-free coverage for the
-  byte-exact gamepad encoding (field order, widths, signedness, clamping at full scale) and for
-  latest-state-wins backpressure (a second state produced before the notification is acknowledged
-  replaces the pending one; no duplicated, queued or replayed gamepad reports). Swift cannot be
-  compiled on this Windows machine (no Xcode/swift, §12), so implementation may claim **CI build
-  only**; it must not claim that Screamer recognises the device, that steering / gas / brake /
-  ability buttons behave, or any latency or feel result. Until the owner completes the new §9 item
-  12 hardware session, this stays "contract defined" — and after implementation, "implemented,
-  physical verification pending". No PR text may assert gamepad functionality as verified.
+- **N. Tests and claim boundaries.** Implementation adds dependency-free coverage for the byte-exact
+  gamepad encoding (field order, widths, signedness, clamping at full scale) and for latest-state-wins
+  backpressure (a second state produced before the notification is acknowledged replaces the pending
+  one; no duplicated, queued or replayed gamepad reports). Swift cannot be compiled on this Windows
+  machine (no Xcode/swift, §12), so implementation may claim **CI build only** — which it now has
+  (runs `36372951698` / `36373205510`). It must not claim that Screamer recognises the device, that
+  steering / gas / brake / ability buttons behave, or any latency or feel result. Until the owner
+  completes the new §9 item 12 hardware session, this stays "implemented in source, CI-built, physical
+  verification pending". No PR text may assert gamepad functionality as verified.
 
 ## 6. MEASURED facts
 (From the one good physical run, iPad Air 11" M2 2024 + Windows, 2026-09-20 — do not extend these.)
@@ -579,7 +582,7 @@ actions moves.
   physical verification pending" until the owner runs the §9 checks in both orientations. No
   dictation work is included here (still §8 stage 5 / §13).
 
-## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED; IMPLEMENTED IN `c8babce` (CI build and physical acceptance pending)
+## 7.2 Windows helper and foreground-aware layouts — CONTRACT DEFINED; IMPLEMENTED IN `c8babce` (CI build passed; physical acceptance pending)
 Spec-first contract for the owner-approved optional Windows helper that tells the iPad which
 application is in the foreground so the iPad can present an app-specific CONTROL layout. This is
 the previously non-goaled "Windows companion / WebSocket transport" and "dynamic per-app panels"
@@ -802,9 +805,10 @@ companion app, secure local pairing and per-app/foreground layout contract are d
 commit `fb77782` and implemented by commit `c8babce` (`feat(windows): configure foreground app
 layouts [spec fb77782]`): Windows C# helper + iPad `BTRemote/WindowsForeground.swift` + the
 user-editable JSON layout document from §7.2 F. Nothing in §7.2 may be called verified:
-the C# helper builds and its dependency-free tests pass locally (67 checks), Swift cannot be
-compiled on this Windows machine so the iOS client is unbuilt and its CI build is still pending,
-and §9 item 10 stays outstanding.
+the C# helper builds and its dependency-free tests pass locally (67 checks); Swift cannot be
+compiled on this Windows machine, so the iOS client has never been built locally and its CI build
+now exists (runs `36372951698` / `36373205510`), but its behaviour is unverified and §9 item 10
+stays outstanding.
 The next bounded task was the operator-requested **Screamer racing gamepad** contract (§5.2): the
 additive Report ID 7 composite gamepad report and the nested RACING sub-mode under GAME. It is a
 new item added to the list above and does not re-order it: stage 5 (§7.2) verification stays
@@ -812,11 +816,15 @@ outstanding exactly as described above. §5.2 is now implemented in source — c
 (`feat(game): implement Screamer racing gamepad [spec e8a62aa]`) and fixes `bfb3231`
 (`fix(game): iterate gamepad subscriber set [spec e8a62aa]`) and `4fa3506`
 (`fix(game): hide racing controls outside racing [spec e8a62aa]`), all following spec `e8a62aa` and
-following the §4 protected-path exception exactly as written there. Nothing in §5.2 is built, tested
-or verified yet: the only workflow that has run is `36371784190` at `8e9cc6b`, which FAILED in the
-app build (`Set<UUID>.keys`, Test step passed), and the follow-up fixes `bfb3231`/`4fa3506` are not
-yet pushed or compiled, so no passing unsigned `.ipa` exists for the repaired code. §9 item 12 is
-still outstanding.
+following the §4 protected-path exception exactly as written there; merged `30ccaaa` via PR #23.
+The repaired code **is built**: workflow_dispatch run `36372951698` passed Test → Build → Package →
+Upload on implementation HEAD `6c746a6f14a25c08063694b21796f667471a7602`, and push run `36373205510`
+passed the same jobs on merge commit `30ccaaa3be6f902a4eb91f7954f322d508f830c6`; the unsigned
+`.ipa` is in the run artifacts. (Historical, superseded: run `36371784190` at `8e9cc6b` FAILED in the
+app build with `Set<UUID>.keys`, Test step passed; `bfb3231`/`4fa3506` fixed that.)
+CI build is not functional verification: §9 item 12 (Screamer on the real iPad + Windows, including
+the §5.2 M Windows descriptor-cache re-pair action) is still outstanding and is now the required next
+step once that CI-built `.ipa` is installed via SideStore.
 
 Later unstarted roadmap stages (native dictation RU/EN, feedback,
 experimental TOUCH / absolute digitizer) still each require their own preceding spec commit; no
@@ -918,10 +926,12 @@ can pass it.)
   else changed. Do not record this as a latency result or as proof that all disconnect causes are
   fixed.
 - 12. Screamer racing gamepad (§5.2) — physical checks only, on the real iPad + Windows; the §5.2
-  implementation exists in source (`8e9cc6b` + `bfb3231` + `4fa3506`) but is not CI-built or installed
-  yet (the only workflow run so far, `36371784190` at `8e9cc6b`, FAILED in the app build with
-  `Set<UUID>.keys`, and the two follow-up fixes are not yet pushed or compiled), so do not run these
-  before a CI-built implementation of the repaired code is installed on the iPad:
+  implementation exists in source (`8e9cc6b` + `bfb3231` + `4fa3506`) and is now CI-built (the
+  repaired code passed Test → Build → Package → Upload in workflow_dispatch run `36372951698` at
+  `6c746a6` and in push run `36373205510` at merge commit `30ccaaa`; the unsigned `.ipa` artifact is
+  available). The historical failed run `36371784190` at `8e9cc6b` (FAILED in the app build with
+  `Set<UUID>.keys`, Test step passed) is superseded by `bfb3231`/`4fa3506`. Install the CI-built
+  unsigned `.ipa` via SideStore first, then run these checks — none of them is implied by CI:
   (a) after installing the new build, Windows enumerates the iPad as a device that also exposes a
   gamepad with analog axes (if it does not, remove the paired BTRemote HID device and re-pair once,
   §5.2 M, and record that as a descriptor-cache action, not a code fix);
@@ -939,7 +949,8 @@ can pass it.)
   (g) afterwards re-run a spot check from items 4–7 and item 11 to confirm the existing mouse,
   keyboard, DECK, Direct Input and advertising-recovery behaviour is completely unchanged.
 - Ready = all mandatory items (former MVP table 1–14) plus items 9–11 work AND lock-screen
-  acceptance passes; item 12 becomes mandatory once the CI-built implementation is installed.
+  acceptance passes; item 12 is now required for acceptance once the CI-built implementation is
+  installed on the iPad.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
@@ -973,13 +984,19 @@ can pass it.)
   CONTROL workspace`) [spec `97d459b`], merged `482155b` via PR #17; this replaces the separate
   TRACKPAD and DECK modes (`BTRemote/KeyboardView.swift`, `BTRemote/RemoteView.swift` at
   `3a3ddf2`). Physical verification stays pending per §9.
-- **Screamer racing gamepad (§5.2):** CONTRACT DEFINED AND IMPLEMENTED IN SOURCE — implementation
-  commits `8e9cc6b` + fixes `bfb3231` + `4fa3506` [spec `e8a62aa`]; **not built, not tested, not
-  verified**. `GamepadReport`, Report ID 7, the additive gamepad bytes in the report map (303 bytes
-  total) and the RACING input source now exist in code, but the only workflow evidence is run
-  `36371784190` at `8e9cc6b`, which FAILED in the app build (`Set<UUID>.keys`; Test step passed), and
-  the follow-up fixes `bfb3231`/`4fa3506` are not yet pushed or compiled — there is no passing
-  unsigned build of the repaired code. Do not describe any gamepad or Screamer behaviour as working.
+- **Screamer racing gamepad (§5.2):** CONTRACT DEFINED AND IMPLEMENTED — implementation commits
+  `8e9cc6b` + fixes `bfb3231` + `4fa3506` [spec `e8a62aa`], merged `30ccaaa` via PR #23; **CI-built,
+  unsigned artifact available, not yet physically verified**. `GamepadReport`, Report ID 7, the
+  additive gamepad bytes in the report map (303 bytes total) and the RACING input source exist in
+  code, and the
+  repaired code passed the full Test → Build → Package → Upload workflow (workflow_dispatch run
+  `36372951698` on implementation HEAD `6c746a6f14a25c08063694b21796f667471a7602`; push run
+  `36373205510` on merge commit `30ccaaa3be6f902a4eb91f7954f322d508f830c6`); the unsigned
+  `BTRemote.ipa` artifact from that run is available for SideStore install. Historical, superseded:
+  run `36371784190` at `8e9cc6b` FAILED in the app build (`Set<UUID>.keys`; Test step passed) and was
+  fixed by `bfb3231`/`4fa3506`. CI is not functional verification: do not describe any gamepad or
+  Screamer behaviour as working — §9 item 12 (iPad + Windows + Screamer, including the §5.2 M
+  Windows descriptor-cache re-pair action) is still outstanding.
   See §5.2 N for the CI-vs-hardware claim boundary and §5.2 M for the Windows remove/re-pair
   fallback after the report-map change; §5.2 D is the only authorization to touch
   `BTRemote/LowEnergy/` / `BTRemote/HIDInput.swift` / `BTRemote/HIDReports.swift` for this, and
@@ -990,18 +1007,22 @@ can pass it.)
   The C# helper builds with `dotnet build` and its dependency-free tests pass locally
   (`ALL TESTS PASSED`, 67 checks). The Swift side (`BTRemote/WindowsForeground.swift`,
   `BTRemote/KeyboardView.swift`, `BTRemote/AppSettings.swift`, `BTRemote/SettingsView.swift`) has
-  never been compiled — there is no Xcode/swift on this machine — so its build must be confirmed by
-  the macOS GitHub Actions job and its behaviour by the owner's §9 item 10 hardware session. Do not
-  describe §7.2 as passed, and do not treat the previously hard-coded VS Code / Chrome / Explorer
+  never been compiled locally — there is no Xcode/swift on this machine — its build is now confirmed
+  by the macOS GitHub Actions job (runs `36372951698` / `36373205510`), but its behaviour still depends
+  on the owner's §9 item 10 hardware session. Do not describe §7.2 as passed, and do not treat the
+  previously hard-coded VS Code / Chrome / Explorer
   action sets or the fixed executable map as finished work: both are now the user-editable JSON
   document (§7.2 F).
 - **Build:** no Xcode/swift on the Windows machine — "build passes" is verified up to code
-  HEAD `aa4443c` (CI run `36203590465`; earlier code HEADs: `dbe36ab` / run `35652625241`,
+  HEAD `6c746a6f14a25c08063694b21796f667471a7602` / merge `30ccaaa3be6f902a4eb91f7954f322d508f830c6`
+  (CI runs `36372951698` / `36373205510`; earlier code HEADs: `aa4443c` / run `36203590465`,
+  `dbe36ab` / run `35652625241`,
   `ac87c61` / run `35642707603`, `0bccedc` / run `35511332912`, `7b8679d` / run `35561610311`);
-  any newer Swift edit is unverified without a new CI run — which includes the §7.2 F work in
+  the §5.2 gamepad code and the §7.2 F work in
   `BTRemote/WindowsForeground.swift` / `KeyboardView.swift` / `AppSettings.swift` /
-  `SettingsView.swift` (committed in `c8babce`, never built). The C# companion builds and its tests
-  pass locally (`dotnet`, .NET 8, no NuGet).
+  `SettingsView.swift` (committed in `c8babce`) are therefore compiled by CI, but their behaviour is
+  still unverified. Any newer Swift edit is unverified without a new CI run.
+  The C# companion builds and its tests pass locally (`dotnet`, .NET 8, no NuGet).
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
 - Imported upstream features out of scope here: iPhone remote surface, macOS Bluetooth Classic
