@@ -550,7 +550,7 @@ final class HIDPeripheral: NSObject, ObservableObject {
     /// and subscribed to keyboard/mouse is deliberately not a gamepad recipient, so its
     /// presence cannot re-populate the gamepad cache.
     private func gamepadRecipients() -> [CBCentral] {
-        gamepadSubscribedCentrals.keys
+        gamepadSubscribedCentrals
             .filter { !inactiveCentrals.contains($0) }
             .compactMap { centralObjects[$0] }
     }
