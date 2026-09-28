@@ -51,6 +51,9 @@ enum ReportID: UInt8 {
     case battery = 4
     case systemControl = 5
     case consumerControl = 6
+    /// SPEC §5.2 B: 1–6 are already taken, so the Screamer racing gamepad takes the
+    /// next unused Report ID. No existing report ID, byte or semantic is changed.
+    case gamepad = 7
 }
 
 enum ReportType: UInt8 {
@@ -65,7 +68,9 @@ extension ReportID {
     }
 }
 
-/// 239-byte HID report map
+/// HID report map: the original 239 bytes (report IDs 1–6, byte-identical to the
+/// pre-§5.2 map) plus the strictly additive fixed-length gamepad block (report ID 7),
+/// 303 bytes in total.
 extension HIDProfile {
     static let reportMapData = Data([
         // mouse, Report ID 1 (52 bytes)
@@ -196,6 +201,43 @@ extension HIDProfile {
         0x25, 0xFF, //     Logical Max (0xFF)
         0x81, 0x00, //     Input (Data,Array,Abs)
         0xC0, //   End Collection
+        0xC0, // End Collection
+
+        // gamepad (Screamer racing, SPEC §5.2), Report ID 7: strictly additive block
+        // appended after the unchanged 239 bytes above. One fixed-length input report
+        // carries the whole controller state: 1 button byte + 4 signed axis bytes +
+        // 2 unsigned trigger bytes = 7 bytes.
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x04, // Usage (Game Pad)
+        0xA1, 0x01, // Collection (Application)
+        0x85, 0x07, //   Report ID (7)
+        0x05, 0x09, //   Usage Page (Button)
+        0x19, 0x01, //   Usage Min (Button 1)
+        0x29, 0x03, //   Usage Max (Button 3)
+        0x75, 0x01, //   Report Size (1)
+        0x95, 0x03, //   Report Count (3)
+        0x15, 0x00, //   Logical Min (0)
+        0x25, 0x01, //   Logical Max (1)
+        0x81, 0x02, //   Input (Data,Var,Abs): 3 ability bits
+        0x75, 0x05, //   Report Size (5)
+        0x95, 0x01, //   Report Count (1)
+        0x81, 0x03, //   Input (Const,Var,Abs): reserved bits, always sent 0
+        0x05, 0x01, //   Usage Page (Generic Desktop)
+        0x09, 0x30, //   Usage (X)  = lx, steering from the recentered baseline
+        0x09, 0x31, //   Usage (Y)  = ly, reserved, stays neutral
+        0x09, 0x33, //   Usage (Rx) = rx, floating free-surface drag
+        0x09, 0x34, //   Usage (Ry) = ry, reserved, stays neutral
+        0x75, 0x08, //   Report Size (8)
+        0x95, 0x04, //   Report Count (4)
+        0x15, 0x81, //   Logical Min (-127)
+        0x25, 0x7F, //   Logical Max (127)
+        0x81, 0x02, //   Input (Data,Var,Abs): four signed axes
+        0x09, 0x32, //   Usage (Z)  = lt, brake
+        0x09, 0x35, //   Usage (Rz) = rt, gas
+        0x95, 0x02, //   Report Count (2)
+        0x15, 0x00, //   Logical Min (0)
+        0x26, 0xFF, 0x00, // Logical Max (255)
+        0x81, 0x02, //   Input (Data,Var,Abs): two unsigned trigger axes
         0xC0 // End Collection
     ])
 }

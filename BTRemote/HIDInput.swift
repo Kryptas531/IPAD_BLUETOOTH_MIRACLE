@@ -10,6 +10,8 @@ struct HIDInput {
     let sendMouse: (MouseReport) -> Void
     let sendKeyboard: (KeyboardReport) -> Void
     let sendConsumer: (ConsumerReport) -> Void
+    /// SPEC §5.2 D: additive plumbing for the Screamer racing gamepad report.
+    let sendGamepad: (GamepadReport) -> Void
     let updateBattery: (UInt8) -> Void
     let isActive: Bool
     let isConnected: Bool
@@ -78,6 +80,9 @@ extension HIDInput {
                 sendMouse: { classic.sendMouse($0) },
                 sendKeyboard: { classic.sendKeyboard($0) },
                 sendConsumer: { classic.sendConsumer($0) },
+                // SPEC §5.2 D: `BTRemote/Classic/` stays unchanged, so the Bluetooth
+                // Classic backend offers no gamepad report and none is sent there.
+                sendGamepad: { _ in },
                 updateBattery: { classic.updateBatteryLevel($0) },
                 isActive: classic.isSDPPublished,
                 isConnected: classic.connectedAddress != nil,
@@ -94,7 +99,8 @@ extension HIDInput {
 
     static var unavailable: HIDInput {
         HIDInput(
-            sendMouse: { _ in }, sendKeyboard: { _ in }, sendConsumer: { _ in }, updateBattery: { _ in },
+            sendMouse: { _ in }, sendKeyboard: { _ in }, sendConsumer: { _ in }, sendGamepad: { _ in },
+            updateBattery: { _ in },
             isActive: false, isConnected: false, activeError: nil, batteryLevel: 0
         )
     }
@@ -105,6 +111,7 @@ extension HIDInput {
             sendMouse: { lowEnergy.sendMouse($0) },
             sendKeyboard: { lowEnergy.sendKeyboard($0) },
             sendConsumer: { lowEnergy.sendConsumer($0) },
+            sendGamepad: { lowEnergy.sendGamepad($0) },
             updateBattery: { lowEnergy.updateBatteryLevel($0) },
             isActive: lowEnergy.isHIDServiceAdded,
             isConnected: lowEnergy.connectedCentrals.contains { !lowEnergy.inactiveCentrals.contains($0) } || !central.connected.isEmpty,

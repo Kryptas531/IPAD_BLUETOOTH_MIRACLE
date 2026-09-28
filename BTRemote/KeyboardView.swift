@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if os(iOS)
+    import UIKit
+#endif
+
 private let keyHeight: CGFloat = 44
 
 /// Touch-to-mouse surface mode on the Windows input screen.
@@ -86,15 +90,47 @@ struct KeyboardView: View {
             } else if geo.size.width > geo.size.height {
             if padMode == .game {
                 ZStack(alignment: .top) {
-                    TrackpadPanel(
-                        hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics,
-                        touchMovementEnabled: gameInputMode != .gyro
-                    )
+                    #if os(iOS)
+                        if gameInputMode == .racing {
+                            // SPEC §5.2 I: the free racing surface uses raw UIKit touches.
+                            // It is not the §7.1 CONTROL pad and not the relative-mouse
+                            // path, and it covers the whole GAME surface behind the racing
+                            // controls, so a thumb drag can drive RX at the same time as
+                            // steering, the pedals and the ability buttons.
+                            RacingSurfaceView(
+                                onTouchBegan: { gyro.beginRacingTouch(at: $0) },
+                                onTouchMoved: { gyro.moveRacingTouch(to: $0) },
+                                onTouchEnded: { gyro.endRacingTouch() }
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            TrackpadPanel(
+                                hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics,
+                                // SPEC §5.2 H: racing never reuses the relative-mouse path,
+                                // so touch movement is not sent in RACING; touch and hybrid
+                                // keep the §5.1 behaviour exactly.
+                                touchMovementEnabled: gameInputMode == .touch || gameInputMode == .hybrid
+                            )
+                        }
+                    #else
+                        // SPEC §5.2: RACING is an iPad-only nested GAME source; the macOS
+                        // build keeps the pre-§5.2 surface byte-for-byte unchanged.
+                        TrackpadPanel(
+                            hid: hid, mode: padMode, metrics: lowEnergy.performanceMetrics,
+                            touchMovementEnabled: gameInputMode != .gyro
+                        )
+                    #endif
                     if gameChromeVisible {
                         VStack(spacing: 4) {
                             controlBar
                             Spacer()
                             bottomStrip
+                            #if os(iOS)
+                                if gameInputMode == .racing {
+                                    // SPEC §5.2 J: brake/gas and three ability buttons.
+                                    racingControls
+                                }
+                            #endif
                             HStack(spacing: 6) {
                                 Text(L10n.Settings.trackingSpeed).font(.caption2)
                                 Slider(value: $touchpadSensitivity, in: AppSettings.pointerSensitivityRange)
@@ -107,22 +143,30 @@ struct KeyboardView: View {
                             #if os(iOS)
                                 HStack(spacing: 6) {
                                     // SPEC §5.1 I: GAME input source, gyro sensitivity, recenter.
+                                    // SPEC §5.2 G: RACING is nested inside GAME, not a fourth
+                                    // top-level mode; touch/gyro/hybrid keep their existing
+                                    // behaviour, labels and defaults unchanged.
                                     Picker(L10n.Input.source, selection: $gameInputMode) {
                                         Text(L10n.Input.touch).tag(GameInputMode.touch)
                                         Text(L10n.Input.gyro).tag(GameInputMode.gyro)
                                         Text(L10n.Input.hybrid).tag(GameInputMode.hybrid)
+                                        Text(L10n.Input.racing).tag(GameInputMode.racing)
                                     }
                                     .pickerStyle(.segmented)
                                     .labelsHidden()
-                                    .frame(maxWidth: 200)
+                                    .frame(maxWidth: 260)
                                     Text(L10n.Settings.gyroSensitivity).font(.caption2)
                                     Slider(value: $gyroSensitivity, in: AppSettings.gyroSensitivityRange)
                                         .frame(maxWidth: 180)
-                                    Button(L10n.Action.recenter) {
-                                        Haptics.tap()
-                                        gyro.recenter()
+                                    // SPEC §5.2 J: in RACING the re-baseline control lives in
+                                    // the always-visible racing row, so it is not duplicated here.
+                                    if gameInputMode != .racing {
+                                        Button(L10n.Action.recenter) {
+                                            Haptics.tap()
+                                            gyro.recenter()
+                                        }
+                                        .buttonStyle(.bordered)
                                     }
-                                    .buttonStyle(.bordered)
                                     if gameInputMode != .touch, !gyro.isAvailable {
                                         Text(L10n.Input.motionUnavailable)
                                             .font(.caption2)
@@ -152,13 +196,22 @@ struct KeyboardView: View {
                                 .allowsHitTesting(false)
                         }
                     } else {
-                        Button("•••") {
-                            gameChromeVisible = true
+                        // SPEC §5.2 J: the GAME chrome auto-hides after 3 s, but the racing pedals, the
+                        // three ability buttons and RECENTER stay on the play surface, so the
+                        // player can always reach them while RACING is selected.
+                        VStack(spacing: 4) {
+                            Button("•••") {
+                                gameChromeVisible = true
+                            }
+                            .font(.caption2)
+                            .buttonStyle(.bordered)
+                            .padding(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            #if os(iOS)
+                                // SPEC §5.2 J: brake/gas, three ability buttons and RECENTER.
+                                racingControls
+                            #endif
                         }
-                        .font(.caption2)
-                        .buttonStyle(.bordered)
-                        .padding(4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             } else {
@@ -208,9 +261,51 @@ struct KeyboardView: View {
             .onChange(of: gameInputMode) { _ in configureGyro() }
             .onChange(of: gyroSensitivity) { _ in applyGyroSensitivity() }
             // SPEC §5.1 G: becoming active again re-baselines the motion source.
+            // SPEC §5.2 L: resigning active, backgrounding or suspension stops the motion
+            // source and neutralizes every racing source, so Windows is never left with a
+            // stuck axis, trigger or button and no in-flight sample can write LX afterwards.
             .onChange(of: scenePhase) { phase in
-                if phase == .active { configureGyro() }
+                if phase == .active {
+                    configureGyro()
+                } else {
+                    gyro.stop()
+                }
             }
+            // SPEC §5.2 L: the same neutralization covers the link itself. When the connected
+            // central disappears (or the HID service goes away) the racing sources are stopped
+            // and released, so a still-held brake/gas, ability button or RX is never sent and
+            // cached into a disconnected host, and never survives locally into the next session.
+            // A reconnect restarts the same single motion pipeline and re-baselines it.
+            .onChange(of: lowEnergy.connectedCentrals) { centrals in
+                if centrals.isEmpty {
+                    gyro.stop()
+                } else {
+                    configureGyro()
+                }
+            }
+            // SPEC §5.2 L: the gamepad report has its own subscribers, tracked separately
+            // because every report characteristic shares the 0x2A4D UUID. If the host stops
+            // subscribing to the gamepad while it still subscribes to keyboard/mouse, the
+            // central stays connected, so racing must still be stopped and neutralized here;
+            // otherwise the next gyro sample would send and cache a non-neutral state into a
+            // host that has no gamepad. A host that (re)subscribes while RACING is selected
+            // restarts the same single motion pipeline and re-baselines it.
+            .onChange(of: lowEnergy.gamepadSubscribedCentrals) { centrals in
+                if centrals.isEmpty {
+                    gyro.stop()
+                } else if gameInputMode == .racing {
+                    configureGyro()
+                }
+            }
+            .onChange(of: lowEnergy.isHIDServiceAdded) { added in
+                if added {
+                    configureGyro()
+                } else {
+                    gyro.stop()
+                }
+            }
+            // SPEC §5.2 L: the view disappearing also stops and neutralizes.
+            .onDisappear { gyro.stop() }
             // SPEC §7.1 E: opening the "Text entry" surface and focusing its field are different
             // events. Only tapping/focusing the field makes Text entry the visible surface.
             // CONTROL keeps the keyboard safe area so the field, Send and Clear stay visible and
@@ -410,9 +505,20 @@ struct KeyboardView: View {
         }
 
         /// Wire the gyro source to the existing relative-mouse report path and start or stop
-        /// it according to the selected GAME input source (SPEC §5.1 B/G).
+        /// it according to the selected GAME input source (SPEC §5.1 B/G). SPEC §5.2 G/H:
+        /// RACING reuses the same single motion pipeline with the absolute baseline
+        /// mapping; `sensitivity` stays the §5.1 mouse setting and racing does not use it.
         @MainActor private func configureGyro() {
             gyro.sensitivity = gyroSensitivity
+            // SPEC §5.2 L: every exit from RACING (to touch, gyro or hybrid) must send the neutral
+            // gamepad report BEFORE the next source is configured. `start` resets the in-memory
+            // state without sending it, so without this a held brake/gas, an ability button or
+            // a deflected stick would stay latched on Windows. RACING -> touch and leaving GAME
+            // are covered by `stop()`, which neutralizes as well.
+            if gyro.mode == .racing, gameInputMode != .racing {
+                gyro.neutralizeRacing()
+            }
+            gyro.mode = gameInputMode
             guard padMode == .game else {
                 gyro.stop()
                 return
@@ -423,6 +529,64 @@ struct KeyboardView: View {
                 gyro.start(hid)
             }
         }
+
+        /// SPEC §5.2 J/L: the racing controls — brake (LT), gas (RT), three ability buttons
+        /// (A, B, X) and RECENTER. All momentary: press asserts, release clears, and each
+        /// control only clears its own field, so several can be held at the same time. They
+        /// reuse the existing `HoldButton`/`PressGesture` affordance unchanged. This row is
+        /// NOT part of the auto-hiding GAME chrome: it stays visible and tappable on the
+        /// racing surface for the whole session, and every target is 44 pt high (the same
+        /// height as the §5/§7.1 keyboard keys) so it stays usable in landscape.
+        private var racingControls: some View {
+            HStack(spacing: 6) {
+                racingTrigger(L10n.Input.brake, .brake)
+                racingTrigger(L10n.Input.gas, .gas)
+                racingButton(L10n.Input.boost, .a)
+                racingButton(L10n.Input.ability1, .b)
+                racingButton(L10n.Input.ability2, .x)
+                Button {
+                    Haptics.tap()
+                    gyro.recenter()
+                } label: {
+                    Text(L10n.Action.recenter).font(.footnote).lineLimit(1).minimumScaleFactor(0.5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(groupFill))
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: 44)
+        }
+
+        private func racingTrigger(_ label: LocalizedStringKey, _ trigger: GamepadTrigger) -> some View {
+            HoldButton(
+                onPress: {
+                    Haptics.tap()
+                    gyro.setRacingTrigger(trigger, pressed: true)
+                },
+                onRelease: {
+                    gyro.setRacingTrigger(trigger, pressed: false)
+                },
+                background: { RoundedRectangle(cornerRadius: 6).fill(groupFill) },
+                label: { Text(label).font(.footnote).lineLimit(1).minimumScaleFactor(0.5) }
+            )
+            .accessibilityLabel(label)
+        }
+
+        private func racingButton(_ label: LocalizedStringKey, _ button: GamepadButtons) -> some View {
+            HoldButton(
+                onPress: {
+                    Haptics.tap()
+                    gyro.setRacingButton(button, pressed: true)
+                },
+                onRelease: {
+                    gyro.setRacingButton(button, pressed: false)
+                },
+                background: { RoundedRectangle(cornerRadius: 6).fill(groupFill) },
+                label: { Text(label).font(.footnote).lineLimit(1).minimumScaleFactor(0.5) }
+            )
+            .accessibilityLabel(label)
+        }
+
     #endif
 
     // Compact row: input-surface mode switcher + Direct Input release + connection status.
@@ -1035,5 +1199,88 @@ private final class KeyTypist: ObservableObject {
     #Preview {
         KeyboardView(goToSetup: {})
             .environmentObject(DirectInputController())
+    }
+#endif
+
+#if os(iOS)
+    /// SPEC §5.2 I: the free racing surface. Raw UIKit touches — not a SwiftUI
+    /// `DragGesture`, which would fight the §7.1 CONTROL pad and the §5 keyboard —
+    /// covering all of the GAME surface that is not a racing button/trigger hit
+    /// region. Each touch's own `touchesBegan` point is its origin, so there is no
+    /// drawn pad to aim at, and only the first touch on this surface drives RX.
+    struct RacingSurfaceView: UIViewRepresentable {
+        var onTouchBegan: (CGPoint) -> Void
+        var onTouchMoved: (CGPoint) -> Void
+        var onTouchEnded: () -> Void
+
+        func makeUIView(context: Context) -> RacingTouchView {
+            RacingTouchView(onTouchBegan: onTouchBegan, onTouchMoved: onTouchMoved, onTouchEnded: onTouchEnded)
+        }
+
+        func updateUIView(_ uiView: RacingTouchView, context: Context) {
+            uiView.onTouchBegan = onTouchBegan
+            uiView.onTouchMoved = onTouchMoved
+            uiView.onTouchEnded = onTouchEnded
+        }
+    }
+
+    /// Single-drag raw touch view, mirroring the §5 "GAME high-fidelity input"
+    /// handling: `touchesBegan`/`touchesMoved(_:with:)` with
+    /// `UIEvent.coalescedTouches(for:)`; predicted touches are not used. A touch that
+    /// began on a racing control is never routed here (only actual control hit areas
+    /// intercept), and `touchesEnded`/`touchesCancelled` releases RX.
+    @MainActor
+    final class RacingTouchView: UIView {
+        var onTouchBegan: (CGPoint) -> Void
+        var onTouchMoved: (CGPoint) -> Void
+        var onTouchEnded: () -> Void
+
+        private var tracked: UITouch?
+
+        init(
+            onTouchBegan: @escaping (CGPoint) -> Void,
+            onTouchMoved: @escaping (CGPoint) -> Void,
+            onTouchEnded: @escaping () -> Void
+        ) {
+            self.onTouchBegan = onTouchBegan
+            self.onTouchMoved = onTouchMoved
+            self.onTouchEnded = onTouchEnded
+            super.init(frame: .zero)
+            isMultipleTouchEnabled = true
+            backgroundColor = .clear
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            guard tracked == nil, let touch = touches.first else { return }
+            tracked = touch
+            let location = touch.location(in: self)
+            onTouchBegan(location)
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            guard let tracked, touches.contains(tracked) else { return }
+            // The newest actual sample wins; the surface maps an absolute position
+            // from the touch's own origin, so only the latest point matters.
+            let latest = (event?.coalescedTouches(for: tracked) ?? [tracked]).last ?? tracked
+            onTouchMoved(latest.location(in: self))
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+            release(touches)
+        }
+
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+            release(touches)
+        }
+
+        private func release(_ touches: Set<UITouch>) {
+            guard let tracked, touches.contains(tracked) else { return }
+            self.tracked = nil
+            onTouchEnded()
+        }
     }
 #endif

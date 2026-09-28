@@ -446,6 +446,32 @@ extension L10n {
             "input.hybrid"
         }
 
+        /// SPEC §5.2 G: the nested RACING input source inside GAME.
+        static var racing: LocalizedStringKey {
+            "input.racing"
+        }
+
+        /// SPEC §5.2 J: racing controls — brake (LT), gas (RT), three ability buttons.
+        static var brake: LocalizedStringKey {
+            "input.brake"
+        }
+
+        static var gas: LocalizedStringKey {
+            "input.gas"
+        }
+
+        static var boost: LocalizedStringKey {
+            "input.boost"
+        }
+
+        static var ability1: LocalizedStringKey {
+            "input.ability1"
+        }
+
+        static var ability2: LocalizedStringKey {
+            "input.ability2"
+        }
+
         static var motionUnavailable: LocalizedStringKey {
             "input.motion_unavailable"
         }
