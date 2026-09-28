@@ -259,6 +259,17 @@ step passed, and `bfb3231`/`4fa3506` corrected that build error.
 CI build is not functional verification. The §9 item 12 hardware acceptance — including the Windows
 descriptor-cache remove/re-pair action (§5.2 M) and the physical Screamer test — is still outstanding,
 so nothing in this section may be described as working on hardware yet.
+**Source implemented, CI and physical verification outstanding:** §5.2 H has been re-specified
+(steering = signed rotation about the device screen-normal, see H) and that mapping is now
+implemented in source by `7be857e` (`fix(game): restore wheel steering and recenter [spec 9adfd9d]`,
+branch `fix/racing-wheel-steering`), which follows spec commit `9adfd9d` as required by the rule at
+the top of this file. The dependency-free regression tests required by §5.2 N are added in
+`BTRemoteTests/GamepadTests.swift` and call that same production seam
+(`RacingMapper.screenNormalDegrees`, `RacingSourceState.recenterSteering()` in
+`BTRemote/GyroAim.swift`). The CI evidence recorded above belongs to the pre-wheel-fix code:
+neither `7be857e` nor those tests has been compiled or run on this Windows host (no Xcode/swift,
+§12) and no CI run has built them yet, so the wheel steering/recenter work stays
+"implemented in source, CI and physical verification pending".
 - **A. Why the protected HID exception is technically necessary.** Screamer needs **analog**
   steering plus **analog** gas/brake plus separate action buttons, usable at the same time. The
   existing HID surface cannot express that: `MouseReport` (`BTRemote/LowEnergy/HIDReports.swift`)
@@ -355,24 +366,42 @@ so nothing in this section may be described as working on hardware yet.
   implemented, and RACING must not be achieved by changing them. Default selected source stays
   `touch` on first launch, and any already-persisted `gameInputMode` value must still resolve
   (upgrade rule as in §7.1 A).
-- **H. Steering = absolute gyro orientation, RECENTER → LX.** RACING steering must not reuse the
-  §5.1 incremental-delta output: it is an **absolute** axis deflection computed from the device
-  attitude **relative to the baseline established by RECENTER**, written into the gamepad's
-  left-stick X field. On RACING activation, on app reactivation, on returning to GAME and on
-  pressing RECENTRE, the current attitude becomes the baseline and no movement is emitted; turning
-  the iPad back to the recorded pose must return the stick to centre (0), never a drifted position.
+- **H. Steering = signed rotation about the device screen-normal, RECENTER → LX.** RACING steering
+  must not reuse the §5.1 incremental-delta output: it is an **absolute** axis deflection computed
+  from the device attitude **relative to the baseline established by RECENTER**, written into the
+  gamepad's left-stick X field.
+  The rotation steering must follow is the **signed rotation about the device screen-normal (Z)
+  axis** — the motion of turning a steering wheel while facing the screen — **not** the rotation
+  about the device X axis that the §5.1 aim path uses for horizontal mouse movement. A **clockwise**
+  turn as the user faces the screen means **positive** left-stick X; the opposite turn means
+  negative. Because that axis is the device's own screen normal, the mapping must not depend on how
+  the device is held, so landscape left and right stay symmetric.
+  On RACING activation, on app reactivation, on returning to GAME and on pressing RECENTRE, the
+  current attitude becomes the baseline and no movement is emitted; turning the iPad back to the
+  recorded pose must return the stick to centre (0), never a drifted position.
   Reuse the existing single device-motion pipeline (`GyroAimController` / `CMMotionManager`,
   `.xArbitraryZVertical`) — no second motion manager and no new dependency. Initial tuning (the
   operator-requested starting values for the first playable build, to be corrected on hardware, not
-  final): **deadzone ≈2°** of yaw from the baseline → axis stays 0; **full lock ≈30–35°** (start at
-  32°) → full-scale deflection; **expo ≈1.3–1.5** (start at 1.4). The concrete axis index / byte
-  width / sign mapping — which rotation-vector component of `GyroAimController.handle` is the
-  horizontal one and which sign means "turn right" — must be **determined by reading the real
-  code as written at the implementation commit and confirmed on hardware**, not assumed from this
-  document; the binding requirement is the semantic (yaw relative
-  to the recentered baseline → signed left-stick X, same handedness the aim path already produces),
-  not a guessed byte layout. If device motion is unavailable, produce no steering input and show the
-  existing "unavailable" chrome (§5.1 H); never fall back to keycodes for steering.
+  final): **deadzone ≈2°** of rotation from the baseline → axis stays 0; **full lock ≈30–35°**
+  (start at 32°) → full-scale deflection; **expo ≈1.3–1.5** (start at 1.4).
+  **Reason for re-specifying:** the shipped racing code derives steering from the device-X rotation
+  component, which is not the motion a steering wheel uses, and the owner explicitly asks for normal
+  steering-wheel rotation. The owner's one hardware session only established which inputs did not
+  respond (gyro steering, gas, brake and the free drag did not; BOOST/ABILITY1/ABILITY2 did); that
+  is an observation, **not** proof of a root cause, and gas/brake/drag are not addressed by this
+  section. Which quaternion component, sign and byte width implement the semantic above is one
+  implementation choice to be written and justified in the implementation commit, not specified
+  here; the binding requirement is the semantic — signed screen-normal rotation from the recentered
+  baseline → signed left-stick X, clockwise positive. The §5.1 aim path and its mouse sensitivity
+  stay exactly as already implemented and racing never reuses them.
+  Two further requirements in that same seam: (1) pressing RECENTRE must not only move the baseline
+  — it must immediately clear a steering deflection that was already transmitted, by sending LX = 0
+  while preserving every other held field (both pedals, the floating drag, the ability buttons);
+  (2) a sample whose rotation from the baseline is exactly zero must still be mapped (to a centred
+  stick), so a device returned exactly to the recorded pose cannot leave a nonzero racing LX
+  latched. If device motion is unavailable, produce no steering input and show the existing
+  "unavailable" chrome (§5.1 H); never fall back to keycodes for steering. The clockwise-positive
+  sign is the owner-requested behaviour and still needs the §9 item 12 physical confirmation.
 - **I. Floating touch = independent raw UIKit drag → RX.** RACING keeps an **independent, floating**
   raw-UIKit touch area that covers **nearly all of the remaining free racing surface** — every part
   of the GAME surface that is not a racing button/trigger hit region and not the §7.1 CONTROL
@@ -430,6 +459,19 @@ so nothing in this section may be described as working on hardware yet.
   steering / gas / brake / ability buttons behave, or any latency or feel result. Until the owner
   completes the new §9 item 12 hardware session, this stays "implemented in source, CI-built, physical
   verification pending". No PR text may assert gamepad functionality as verified.
+  The steering change in H **required** deterministic quaternion-level coverage in the same
+  dependency-free harness, written against the actual production mapping; that arithmetic now lives
+  in the pure, dependency-free `BTRemote/GyroAim.swift` (`RacingMapper.screenNormalDegrees`,
+  `RacingSourceState.recenterSteering()`) which the harness compiles without UIKit/CoreMotion, and
+  the tests are now written in `BTRemoteTests/GamepadTests.swift` against that production code.
+  Required cases: clockwise and counterclockwise
+  rotation about the device screen normal, a neutral and a held starting orientation, an exact
+  return to the recorded baseline, q/-q equivalent orientations, RECENTER clearing LX while the held
+  pedals and ability buttons are preserved, and a pure device-X (somersault) rotation not producing
+  steering — every one of those cases is now covered by a check in that harness. Swift still cannot be
+  compiled on this Windows machine (§12), so those tests have not been compiled or run locally: they
+  are to be compiled and run by CI, and they prove the mapping only — not what Windows or Steam does
+  with the reported axes.
 
 ## 6. MEASURED facts
 (From the one good physical run, iPad Air 11" M2 2024 + Windows, 2026-09-20 — do not extend these.)
@@ -937,9 +979,11 @@ can pass it.)
   (a) after installing the new build, Windows enumerates the iPad as a device that also exposes a
   gamepad with analog axes (if it does not, remove the paired BTRemote HID device and re-pair once,
   §5.2 M, and record that as a descriptor-cache action, not a code fix);
-  (b) in Screamer's controls the device's left stick steers: rotate the iPad left/right from the
-  recentered pose and confirm the game's steering follows, then press RECENTRE and confirm the stick
-  returns to centre without emitting movement;
+  (b) in Screamer's controls the device's left stick steers: turn the iPad like a steering wheel
+  (rotation about the axis pointing out of the screen) left and right from the recentered pose and
+  confirm the game's steering follows with the expected handedness (clockwise as the user faces
+  the screen = positive/right), then press RECENTRE and confirm the baseline moves to the current
+  pose and the stick returns to centre without emitting movement;
   (c) a drag anywhere on the free racing surface drives the second stick **independently while
   steering** (multitouch — the drag origin is wherever the thumb lands, no drawn pad; a touch begun
   on a button/trigger keeps driving that control instead);
