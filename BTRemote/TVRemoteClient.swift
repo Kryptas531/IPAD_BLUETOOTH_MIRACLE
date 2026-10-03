@@ -209,7 +209,15 @@ final class TVRemoteClient: ObservableObject {
             monitorPath()
             socket.start(queue: queue)
             armDeadline(seconds: pairingChannel ? 30 : 10, reason: "TV service is unreachable or did not finish connecting. Power state is unknown.")
-        } catch { fail("TV client credentials are unavailable. Unlock the iPad, retry, or explicitly forget and re-pair.", retry: false) }
+        } catch {
+            let detail: String
+            if case TVIdentityError.keychain(let status) = error {
+                detail = "Keychain error \(status)."
+            } else if let identityError = error as? TVIdentityError, identityError == .rePairRequired {
+                detail = "Client identity is incomplete or inconsistent."
+            } else { detail = "Client certificate could not be prepared." }
+            fail("TV client credentials are unavailable. \(detail) Unlock the iPad and Retry; if needed, use Forget TV pairing and pair again.", retry: false)
+        }
     }
 
     private func receive(_ socket: NWConnection, _ generation: UInt64) {

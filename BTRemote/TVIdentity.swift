@@ -249,22 +249,17 @@ enum TVIdentityStore {
                 kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
                 kSecReturnData as String: kCFBooleanTrue!,
             ] as CFDictionary, &certItem)
-            guard certStatus == errSecSuccess, let clientCertificateDER = certItem as? Data else {
-                if certStatus == errSecItemNotFound { throw TVIdentityError.rePairRequired }
-                throw TVIdentityError.keychain(certStatus)
-            }
-            var identityItem: CFTypeRef?
-            let identityStatus = SecItemCopyMatching([
-                kSecClass as String: kSecClassIdentity,
-                kSecAttrLabel as String: certificateLabel,
-                kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
-                kSecReturnRef as String: kCFBooleanTrue!,
-            ] as CFDictionary, &identityItem)
-            guard identityStatus == errSecSuccess, let identityItem else {
-                if identityStatus == errSecItemNotFound { throw TVIdentityError.rePairRequired }
-                throw TVIdentityError.keychain(identityStatus)
-            }
-            let identity = identityItem as! SecIdentity
+            let clientCertificateDER: Data
+            if certStatus == errSecSuccess, let data = certItem as? Data { clientCertificateDER = data }
+            else if certStatus == errSecItemNotFound {
+                // A failed first attempt may have saved the key but not its certificate.
+                // Finish only an unpaired identity, using that SAME key. Never rotate a paired identity.
+                guard try loadPairing() == nil else { throw TVIdentityError.rePairRequired }
+                clientCertificateDER = try makeCertificate(privateKey: privateKey)
+                try storeClientCertificate(clientCertificateDER)
+            } else { throw TVIdentityError.keychain(certStatus) }
+            try verifyClientCertificate(clientCertificateDER, privateKey: privateKey)
+            let identity = try matchingIdentity(certificateDER: clientCertificateDER)
             // Confirm the identity really pairs *our* stored key with *our* stored
             // certificate (exact match, §7.3 B).
             var identityCertificate: SecCertificate?
@@ -309,25 +304,9 @@ enum TVIdentityStore {
 
             // Persist key + certificate; then query kSecClassIdentity so the keychain
             // pairs them (matching public key) into the actual SecIdentity to use.
-            let addStatus = SecItemAdd([
-                kSecClass as String: kSecClassCertificate,
-                kSecAttrLabel as String: certificateLabel,
-                kSecValueData as String: certificateDER,
-                kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
-            ] as CFDictionary, nil)
-            guard addStatus == errSecSuccess else { throw TVIdentityError.keychain(addStatus) }
-            var newIdentityItem: CFTypeRef?
-            let identityStatus = SecItemCopyMatching([
-                kSecClass as String: kSecClassIdentity,
-                kSecAttrLabel as String: certificateLabel,
-                kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
-                kSecReturnRef as String: kCFBooleanTrue!,
-            ] as CFDictionary, &newIdentityItem)
-            guard identityStatus == errSecSuccess, let newIdentityItem else {
-                if identityStatus == errSecItemNotFound { throw TVIdentityError.rePairRequired }
-                throw TVIdentityError.keychain(identityStatus)
-            }
-            let identity = newIdentityItem as! SecIdentity
+            try storeClientCertificate(certificateDER)
+            try verifyClientCertificate(certificateDER, privateKey: privateKey)
+            let identity = try matchingIdentity(certificateDER: certificateDER)
             var newIdentityCertificate: SecCertificate?
             let copyStatus = SecIdentityCopyCertificate(identity, &newIdentityCertificate)
             guard copyStatus == errSecSuccess,
@@ -343,6 +322,51 @@ enum TVIdentityStore {
             // never regenerate the private key on a denial.
             throw TVIdentityError.keychain(keyStatus)
         }
+    }
+
+    private static func storeClientCertificate(_ der: Data) throws {
+        guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
+            throw TVIdentityError.invalidCertificate
+        }
+        let status = SecItemAdd([
+            kSecClass as String: kSecClassCertificate,
+            kSecAttrLabel as String: certificateLabel,
+            kSecValueRef as String: certificate,
+            kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
+        ] as CFDictionary, nil)
+        guard status == errSecSuccess else { throw TVIdentityError.keychain(status) }
+    }
+
+    // Apple DTS: identity attribute queries can fail (r.144152660). Enumerate references
+    // and select OUR exact certificate, never the first unrelated identity.
+    // https://developer.apple.com/forums/thread/773777
+    private static func matchingIdentity(certificateDER: Data) throws -> SecIdentity {
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching([
+            kSecClass as String: kSecClassIdentity,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnRef as String: kCFBooleanTrue!,
+            kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
+        ] as CFDictionary, &result)
+        guard status == errSecSuccess else { throw TVIdentityError.keychain(status) }
+        guard let identities = result as? [SecIdentity] else { throw TVIdentityError.keychain(errSecDecode) }
+        for identity in identities {
+            var certificate: SecCertificate?
+            let copyStatus = SecIdentityCopyCertificate(identity, &certificate)
+            guard copyStatus == errSecSuccess else { throw TVIdentityError.keychain(copyStatus) }
+            if let certificate, SecCertificateCopyData(certificate) as Data == certificateDER { return identity }
+        }
+        throw TVIdentityError.keychain(errSecItemNotFound)
+    }
+
+    static func verifyClientCertificate(_ der: Data, privateKey: SecKey) throws {
+        guard let certificate = SecCertificateCreateWithData(nil, der as CFData),
+              let certificateKey = SecCertificateCopyKey(certificate),
+              let publicKey = SecKeyCopyPublicKey(privateKey) else { throw TVIdentityError.invalidCertificate }
+        var error: Unmanaged<CFError>?
+        guard let storedBits = SecKeyCopyExternalRepresentation(publicKey, &error),
+              let certificateBits = SecKeyCopyExternalRepresentation(certificateKey, &error),
+              storedBits as Data == certificateBits as Data else { throw TVIdentityError.rePairRequired }
     }
 
     /// The same certificate generator used by the Keychain path, also exercised on macOS
@@ -588,6 +612,15 @@ enum TVIdentityStore {
             throw TVIdentityError.selfCheckFailed
         }
         let der = try makeCertificate(privateKey: key)
+        try verifyClientCertificate(der, privateKey: key)
+        guard let wrongKey = SecKeyCreateRandomKey([
+            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+            kSecAttrKeySizeInBits as String: 2048,
+        ] as CFDictionary, &error) else { throw TVIdentityError.selfCheckFailed }
+        var mismatchRejected = false
+        do { try verifyClientCertificate(der, privateKey: wrongKey) }
+        catch TVIdentityError.rePairRequired { mismatchRejected = true }
+        guard mismatchRejected else { throw TVIdentityError.selfCheckFailed }
         let signatureVerified = try verifyCertificateSignature(der)
         let extracted = try extractRSAModulusAndExponent(fromServerCertificate: der)
         let publicKeyVerified = extracted == (try tvParseRSAPublicKey(publicDER as Data))
