@@ -12,6 +12,8 @@ That cycle is now complete: spec `b9caa6d` → `1284aca` + fixes `28867db`/`aa44
 fixes restoring already-specified behavior do not require a spec commit.
 
 ## 1. Product intent
+The product has two targets: existing PC control through BLE HID, and owner-approved direct
+TV control over local Wi-Fi (§7.3, specification only; wake unconfirmed).
 Make an iPad a programmable Windows input/control surface: the iPad presents itself to a Windows
 PC as a standard Bluetooth HID keyboard + mouse/trackpad (BLE HID over GATT / HOGP), so Windows
 needs no companion software for basic control. Motivation: drive Windows from an iPad — trackpad/
@@ -31,17 +33,20 @@ mouse, typing, game (aim) input and Windows controls.
 - Primary target: **iPad Air 11-inch (M2, 2024) + Windows 10/11 PC** with Bluetooth LE
   (physical device must be BLE-capable; old `docs/PHYSICAL_TEST.md` pre-checks, migrated).
 - iPad = BLE HID-over-GATT (HOGP) peripheral (keyboard + mouse + consumer); Windows = ordinary
-  Bluetooth HID host. No Windows-side software in current scope.
+  Bluetooth HID host. Basic PC input requires no Windows-side software; the optional
+  foreground-layout helper is defined in §7.2 and never carries input.
 - No paid Apple Developer Program: build = unsigned IPA via GitHub Actions; install via
   SideStore/Sideloadly (re-sign on device with free Apple ID).
-- Imported upstream extras (iPhone remote UI, Bluetooth Classic backend, TV-remote DPad) are
-  out of scope for this product.
+- Additional approved target: **TCL 85C755 over Wi-Fi only**, directly from the iPad (§7.3).
+- Imported upstream extras (iPhone remote UI and Bluetooth Classic backend) remain out of scope.
+  The legacy HID DPad is not an implementation of the new network TV target.
 
 ## 4. Current architecture
 Swift/SwiftUI app `BTRemote`; Xcode project generated via xcodegen from `project.yml` (project
 not committed; Swift 6.0, strict concurrency complete; iOS deployment target 15.0).
 
-Transport: **BLE HID over GATT only.** `BTRemote/LowEnergy/`: `HIDPeripheral.swift`
+PC input transport: **BLE HID over GATT only.** TV is a separate local-network target (§7.3);
+Android TV Remote v2 is its primary candidate, not yet implemented or hardware verified. `BTRemote/LowEnergy/`: `HIDPeripheral.swift`
 (CBPeripheralManager, HID service 0x1812, Report Map, Protocol Mode, Boot Keyboard I/O, report
 references, `*EncryptionRequired`, bootstrap report on subscribe; `sendMouse`/`sendKeyboard`/
 `sendConsumer`/`sendSystemControl`), `HIDProfile.swift` (UUIDs + 303-byte report map: the original 239 bytes plus the additive
@@ -73,8 +78,10 @@ reading the script) and `BTRemote/Info.plist`/`entitlements.plist` (contents not
 sessions — ci-worker zone). The only exceptions any spec commit may grant are: adding
 `NSMotionUsageDescription` to `BTRemote/Info.plist` (§5.1 J), and adding
 `NSLocalNetworkUsageDescription` to `BTRemote/Info.plist` with exactly the text
-`BTRemote connects to your paired Windows PC on the local network to show app-specific controls.` (§7.2). No other
-key may be added there and everything else in those two files stays untouched. A third exception is
+`BTRemote connects to your paired Windows PC on the local network to show app-specific controls.` (§7.2, current implementation).
+For future TV implementation only, §7.3 D supersedes that exact wording and permits a narrowly
+verified `NSBonjourServices` list if discovery needs it. No other key or entitlement change is
+granted; everything else in those two files stays untouched. A third exception is
 granted by §5.2 (Screamer racing gamepad): **additive-only** work in
 `BTRemote/LowEnergy/HIDReports.swift`, `BTRemote/LowEnergy/HIDProfile.swift`,
 `BTRemote/LowEnergy/HIDPeripheral.swift` and `BTRemote/HIDInput.swift` — no existing report, byte,
@@ -232,8 +239,9 @@ CI run `36203590465`, merged `c89997f`); the A–L clauses below remain the cont
   protected-file exception is adding **only** `NSMotionUsageDescription` to `BTRemote/Info.plist`
   with exactly the text `BTRemote uses device motion to control the mouse in GAME mode.`
   (technically required for CoreMotion device attitude; the key is absent as of `dbe36ab`); the
-  other permitted exception is `NSLocalNetworkUsageDescription` as defined in §4/§7.2.
-  Both keys require focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
+  other permitted exception is `NSLocalNetworkUsageDescription` as defined in §4/§7.2
+  (with the future TV wording and narrowly scoped Bonjour exception in §7.3 D).
+  All authorized usage-description/Bonjour changes require focused review. `BTRemote/entitlements.plist`, `BTRemote/LowEnergy/`,
   `BTRemote/Classic/`, `BTRemote/HIDInput.swift` and `BTRemote/HIDReports.swift` stay untouched.
 - **K. No artificial smoothing, filtering or latency** may be added to the input pipeline.
 - **L. Verification:** implementation may claim CI only. Do not claim gyro aim works until the
@@ -359,7 +367,8 @@ neither `7be857e` nor those tests has been compiled or run on this Windows host 
   working exactly as specified — which is precisely why the gamepad report has to be created inside
   `installServices()` and not once at launch.
 - **G. Racing mode is nested under GAME (no new top-level mode).** The top bar stays
-  `GAME | CONTROL | TOUCH`; nothing may add a fourth top-level mode. Inside the temporary GAME
+  `GAME | CONTROL | TOUCH` for the PC target; nothing may add a fourth PC mode. The separate
+  PC/TV target selector is defined in §7.3 and does not change this PC mode contract. Inside the temporary GAME
   chrome the input-source picker gains a nested **`RACING`** choice (`GameInputMode.racing`) next to
   the existing `touch | gyro | hybrid`; those three (the AIM / gyro-aim path of §5.1) keep their
   behaviour, labels, sensitivity defaults, persistence and unavailable-status handling exactly as
@@ -493,7 +502,8 @@ neither `7be857e` nor those tests has been compiled or run on this Windows host 
 ## 7. UX canon
 (Migrated from `docs/CANON LAYOUT.md` — the former `docs/LAYOT PATCH.md` is SUPERSEDED. Re-derive
 details from git history if needed; do not recreate these files. §7.1 supersedes the parts of this
-section that assume separate TRACKPAD / DECK top-level modes; nothing else in §7 is weakened.)
+section that assume separate TRACKPAD / DECK top-level modes; nothing else in §7 is weakened.
+This section describes the PC target; the separate TV surface/target selector is defined in §7.3.)
 - Primary device: iPad Air 11" M2 2024. The Windows-input surface must be usable in BOTH
   orientations (§7.1 F); landscape stays the orientation the §5/§6 measurements were taken in.
   Idea: maximum input surface, minimum permanent controls.
@@ -637,7 +647,7 @@ sets, and the Swift 6 strict-concurrency problem in `AppLayouts` is gone. The co
 does not mean it is verified: the Swift client has never been built locally and is CI-built by runs
 `36372951698` / `36373205510`; no hardware test has been run (§7.2 I, §9 item 10).
 
-Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only input channel.**
+Core principle: **the BLE HID input path (§1/§3/§4/§5) is retained and is the only PC input channel.**
 The helper is out-of-band UI signalling only. It reports a foreground-app identity so the iPad knows
 which layout to show; it does not send HID input, does not replace or re-negotiate BLE/HOGP pairing,
 and is never required for basic mouse / keyboard / trackpad / Direct-Input control. If the helper is
@@ -752,7 +762,8 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   (§9 item 10).
   The iPad requests the iOS local-network permission (`NSLocalNetworkUsageDescription`, §4) only
   when it actually pairs with or connects to the helper — never at launch and never for the plain
-  §7.1 path. If the user denies that permission, the app behaves exactly as §7.1 defines (generic
+  §7.1 PC path. An explicit TV connection/discovery action may also request the same permission
+  under §7.3 D; helper activity must not change the selected target. If the user denies that permission, the app behaves exactly as §7.1 defines (generic
   CONTROL layout); denial must not affect BLE HID pairing or any existing input path.
 - **D. Executable identity.** The helper identifies the foreground application by its **executable
   identity** — the full path and file name of the process owning the foreground window. It does NOT
@@ -827,7 +838,171 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   "implemented, physical verification pending" until the owner runs the added §9 checks with the
   helper on the real Windows PC + iPad.
 
+## 7.3 Direct TV target — CONTRACT DEFINED ONLY; NOT IMPLEMENTED; wake UNCONFIRMED
+
+Owner-approved expansion: the existing app gains a **TV** target alongside **PC**.
+Target hardware is **iPad Air 11-inch M2 (2024) + TCL 85C755, Wi-Fi only**. The owner
+reports that the native TCL app currently does not wake this TV; that observation does
+not establish the cause or prove that every direct network wake method is impossible.
+This documentation stage changes no application code and performs no hardware test.
+
+### A. Scope and preserved PC behavior
+- The iPad talks directly to the TV on the local network. No always-on PC, Windows
+  helper, cloud relay/account, custom TV APK, root or mandatory ADB/developer mode.
+  The TV's existing Android TV Remote Service is an on-device prerequisite to verify.
+- PC input stays on the existing Bluetooth/HID path; the optional §7.2 helper remains
+  foreground-layout signalling only. Preserve PC pairing, report map/security, input
+  behavior, settings and GAME/RACING/CONTROL/Direct Input; do not re-pair Windows for TV.
+- Imported `DPadView.swift` sends HID consumer reports: its presence is not a TV network
+  transport. Do not route the new TV controls through that HID implementation.
+- iPhone UI, Bluetooth Classic, superlatency and §11 non-goals remain outside this task.
+
+### B. Transport evidence and implementation decisions
+**Android TV Remote v2 is the primary candidate, not an implemented or certified choice.**
+Sources inspected 2026-10-03:
+- [Google TV Help — iPhone & iPad remote](https://support.google.com/googletv/answer/11136134?hl=en&co=GENIE.Platform%3DiOS)
+  documents selection of a TV, a code displayed on the TV, pairing, playback, volume,
+  text entry and on/off. This is an official app capability description, not a public
+  Remote v2 wire specification or a guarantee for this TCL's Wi-Fi standby.
+- [androidtvremote2 author's README](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/README.md)
+  identifies v2 as the protocol used by Google TV and requires Android TV Remote Service,
+  without ADB/developer tools. This is primary implementation evidence, not a Google
+  support contract. At that inspected revision, [client connection source](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/src/androidtvremote2/androidtv_remote.py)
+  uses TLS and client certificate/private-key material, with default remote port 6466
+  and pairing port 6467; actual service availability must be checked on the TCL.
+  [Pairing source](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/src/androidtvremote2/pairing.py),
+  [remote source](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/src/androidtvremote2/remote.py)
+  and [message definitions](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/src/androidtvremote2/remotemessage.proto)
+  show key commands, negotiated features and IME text messages with field/session
+  counters. Available key codes do not prove that each app/firmware honors them.
+- [Google's pairing protocol source](https://android.googlesource.com/platform/external/google-tv-pairing-protocol/+/refs/heads/master/)
+  is a pairing reference; do not treat it as the complete current v2 remote protocol.
+
+Future implementation must justify a small Swift/iPadOS-compatible solution against
+these sources and the real service; choose dependencies only with concrete need and
+AGPL-compatible licensing. Do not invent handshake bytes, discovery service names,
+feature masks or undocumented wake behavior. Manual TV address entry is an acceptable
+first connection path; discovery is optional and must survive address/network changes.
+Persist the paired client identity in Keychain, separate from Windows-helper credentials.
+Associate it with the selected TV and verify peer identity using a pairing-bound trust
+strategy; do not copy the reference client's disabled server verification as blanket
+trust. Changed/revoked credentials or TV identity require an explicit re-pair flow.
+Provide forget/re-pair; do not silently destroy an existing Windows or TV pairing.
+
+### C. Target selection, controls and routing
+- A compact, clearly labelled **PC / TV** selector stays reachable; show the active
+  target/device. The PC mode picker remains `GAME | CONTROL | TOUCH`, with RACING nested
+  under GAME. TV is a target, not a fourth PC mode; PC defaults and saved modes migrate
+  without losing unrelated settings. A TV install must work with no PC connection.
+- TV presents a large directional navigation area with OK, plus Back, Home, volume
+  down/up, Mute, Play/Pause, power and a reachable text-entry surface. Keep controls
+  usable in portrait and landscape without a permanent keyboard covering navigation.
+- TV actions, repeated keys and text go only to the selected TV transport. No Windows
+  HID consumer/keyboard fallback on TV failure; physical Direct Input must not leak
+  into Windows while TV is selected. Windows-helper layout events cannot select PC.
+- Before changing target, stop repeats, gyro/racing, typing queues and Direct Input;
+  clear held modifiers/buttons, mouse buttons and gamepad state and release the old
+  target while its link is available. Bind callbacks/queued work to the target/session
+  that created them and discard stale work. If a link is gone, clear local/pending state
+  and start the next session neutral; never replay old presses/power/text on reconnect.
+- Release/cancel held TV keys on touch end/cancel, target change, loss of connection,
+  view exit and app inactivity; reactivation must not resume a held/repeating key.
+  Send text only into a supported, active TV input field with the correct IME session;
+  show unavailable state when unsupported. Preserve Unicode text and do not promise
+  universal text injection, password-field support or clipboard synchronization.
+- Separate connection state from observed power state. Present unpaired, pairing,
+  connecting, connected, reconnecting, local-network access denied and unavailable/error
+  states with a useful retry/settings/re-pair action. Lost reachability means **power
+  unknown**, not off. Bound reconnect attempts; retry after network return, foreground
+  return or TV power-on without repeatedly asking for a pairing code when still valid.
+  Label a power request as pending until observed; never display wake success on send.
+
+### D. iPadOS permissions, secrets and unsigned deployment
+- Preserve unsigned IPA → SideStore/Sideloadly with a free Apple ID (§3/§12). A desktop
+  probe, unsigned build or simulator result cannot prove network/signing behavior on iPad.
+- [Apple TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
+  requires local-network permission for outgoing local TCP/UDP and Bonjour. Ask on an
+  explicit TV connection/discovery action, not launch or plain PC BLE use; §7.2 helper
+  connection may also trigger that shared permission. Denial must leave PC HID usable.
+- This spec grants only these future `Info.plist` exceptions: replace the existing
+  `NSLocalNetworkUsageDescription` with exactly `BTRemote connects to your paired Windows PC for app-specific controls and to your paired TV for remote control on the local network.`;
+  add `NSBonjourServices` only for specific service types verified as used by the chosen
+  discovery path. §4 protection, Bluetooth/motion keys and existing background modes
+  remain; no code/plist/entitlement edit is made in this documentation stage.
+- Apple distinguishes ordinary browsing of declared Bonjour service types from raw
+  multicast/broadcast: the latter requires `com.apple.developer.networking.multicast`.
+  Do not require WOL-broadcast or add that entitlement by assumption. First verify
+  provisioning and actual re-signing/install support; a signing/entitlement change
+  needs a separate concrete spec authorization before implementation. Bonjour is
+  optional; a verified unicast/manual-address path can avoid that requirement.
+- Store client keys/certificates and any pairing-bound TV trust material in Keychain;
+  ordinary non-secret device labels/addresses may use app settings. Do not log or commit
+  pairing secrets, private keys, credentials, typed TV text or SideStore material.
+  Verify pairing reuse after process restart and the actual re-sign/update path; do not
+  assume credentials survive uninstall or a changed signing/access-group identity.
+- [Apple background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)
+  does not provide an always-running LAN remote. Treat control/wake as foreground actions,
+  release inputs on inactivity and reconnect on return. Existing Bluetooth background
+  declarations do not authorize persistent Wi-Fi keepalive or wake from a suspended app.
+
+### E. First implementation gate: pairing → control → standby → wake from iPad
+**Run this bounded feasibility chain before building out the TV UI. Wake is the key
+scenario and is currently UNCONFIRMED; no part of this hardware procedure has been run.**
+1. Record exact TV model/region, firmware, Remote Service version, iPadOS, installed app
+   build/signing method and the Wi-Fi setup. The TV stays Wi-Fi-only; verify both devices
+   are on a LAN that permits direct peer access. Inspect and record current TV settings.
+2. The [TCL C755-series manual linked from 85C755 support](https://www.tcl.com/au/en/support-tv/model/85c755)
+   ([PDF](https://aws-obg-image-lb-4.tcl.com/content/dam/brandsite/region/australia/AU_Mediacenter/download/C755-Series_User-Manual.pdf),
+   pp. 13 and 15) describes **Settings → Network and internet → Network Standby**, and
+   **Settings → System → Power and Energy → Quick start**. Network wake requires both on,
+   Google TV mode, the same wireless network and a controller app supporting wake.
+   The manual says long-press power + confirmed shutdown disables this feature; Quick
+   start increases standby consumption. Verify actual labels/options on this region's
+   firmware; record any approved changes. The manual does not specify a v2 wake packet.
+3. On the **installed iPad app**, pair using the TV-displayed code; verify navigation,
+   OK/Back and a volume change. Restart the app and reconnect using saved pairing.
+   Proceed to standby through the normal remote action; keep mains power connected.
+4. With the PC/helper off and no cloud relay, background the app and return to it to
+   request wake. Observe and time the TV screen actually becoming active and confirm
+   navigation works afterwards. Record transport/service reachability independently.
+   Repeat the standby/wake cycle, including **at least 30 minutes in standby** before
+   reopening the app and waking from iPad. No physical remote may supply the successful
+   wake; it may restore the TV after a recorded failed attempt.
+5. Repeat after a Wi-Fi loss/return and a normal TV power cycle; saved pairing should be
+   reused when valid. Test permission denial/recovery and IP change separately from
+   standby. Full shutdown/unplugging is a separate negative/control case, not standby.
+
+Remote v2 power is a candidate only while the required service/network path can deliver
+it. If Wi-Fi/service sleeps, record the failure and investigate a supported direct
+alternative within scope before expanding UI work. Do not infer off from a timeout,
+claim success from a sent key, or treat standby as loss of mains power. No Bluetooth
+wake or mandatory broadcast-WOL promise; any alternative needs source, iPadOS signing
+feasibility and real TCL proof. If the 30-minute wake gate fails, report a blocker:
+powered-on control alone does not make this TV product ready.
+
+### F. Readiness and separate hardware acceptance
+- Implementation readiness: routing/session isolation and release behavior verified;
+  meaningful tests for target switch, stale queued commands, reconnect and credential
+  errors; actual CI build of the implementation HEAD and installable unsigned IPA.
+  These checks cannot certify wake, supported IME fields or TCL key handling.
+- Hardware readiness: E passes on this iPad/TCL over Wi-Fi, including repeated 30-minute
+  standby wake with PC off; all C controls and representative supported Unicode text
+  fields work; pairing survives restart/update as supported; reconnect and permission
+  recovery behave; portrait/landscape work. Record observed results and limitations.
+- With Windows paired concurrently, prove TV actions/text/Direct Input produce no
+  unintended Windows input, and PC↔TV switching while keys, mouse buttons or racing
+  controls are held leaves neither target stuck. Re-run the existing §9 PC regression
+  spot checks for mouse, typing/modifiers, Direct Input, CONTROL, GAME/RACING and BLE
+  recovery, plus helper fallback. Remaining pre-existing hardware gates stay pending.
+- **Current status: specification only; no TV implementation, build, installation,
+  pairing, control, standby or wake evidence. Wake: UNCONFIRMED.** TV ready requires
+  both implementation checks and the hardware results above, recorded against Git SHA.
+
 ## 8. Active milestone
+**New bounded TV task (§7.3):** specification only. Its first implementation gate is real
+pairing → control → standby → iPad wake, repeated after 30 minutes. Complete that feasibility
+gate before broader TV UI work; existing PC acceptance remains outstanding as recorded below.
+
 Per the reconciled roadmap (2026-09-20/21, renumbered for §7.1/§7.2):
 1. Unified CONTROL surface — UX canon (§7) + unified control contract (§7.1); this absorbs the
    former stages "TRACKPAD usability" and "DECK", which no longer exist as separate modes
@@ -844,7 +1019,8 @@ Stage **4. Gyro aim** is implemented — contract defined in §5.1 (spec `b9caa6
 PR #10. The owner's §9 hardware acceptance for it is still outstanding. Stage **1. Unified
 CONTROL surface** is implemented — contract defined in §7.1 (spec `97d459b`); code in `fd50ae1`
 (`feat(ios): add unified CONTROL workspace`); merged `482155b` via PR #17.
-The next bounded active stage is **5. Windows helper and foreground-aware layouts (§7.2)** — the
+Existing PC stage **5. Windows helper and foreground-aware layouts (§7.2)** remains pending
+physical acceptance — the
 companion app, secure local pairing and per-app/foreground layout contract are defined by spec
 commit `fb77782` and implemented by commit `c8babce` (`feat(windows): configure foreground app
 layouts [spec fb77782]`): Windows C# helper + iPad `BTRemote/WindowsForeground.swift` + the
@@ -903,7 +1079,7 @@ can pass it.)
   on hardware — until then, Alt+Tab can be verified via a physical keyboard through
   Direct Input.)
 - 9. Unified CONTROL surface (repeat items 4–7 in EACH orientation, landscape and portrait):
-  (a) no separate TRACKPAD or DECK top-level mode exists — top bar is `GAME | CONTROL | TOUCH`;
+  (a) no separate TRACKPAD or DECK top-level mode exists — PC mode picker is `GAME | CONTROL | TOUCH`; the separate PC/TV selector follows §7.3;
   (b) the central touchpad and the compact quick actions are visible together, pad central (and
   largest) with actions on the outer edges in landscape / above and below in portrait;
   (c) every existing DECK shortcut and F-key is still reachable — spot-check COPY, PASTE, CUT,
@@ -957,7 +1133,8 @@ can pass it.)
   Direct Input — confirming the helper never carries, sends or overrides HID input and never
   re-negotiates BLE/HOGP pairing.
   (e) **Local-network permission:** verify the iOS local-network permission
-  prompt (`NSLocalNetworkUsageDescription`, §4) appears only on the first helper pairing/connect and
+  prompt (`NSLocalNetworkUsageDescription`, §4) appears on first helper pairing/connect
+  (or an explicit TV network action, §7.3 D, if permission is still undetermined) and
   never at app launch and never on the plain §7.1 path; verify that denying it leaves the generic
   §7.1 CONTROL layout and all BLE HID pairing and existing input paths (items 4–7 / §5) completely
   unaffected.
@@ -994,9 +1171,14 @@ can pass it.)
   gas, brake and all buttons release;
   (g) afterwards re-run a spot check from items 4–7 and item 11 to confirm the existing mouse,
   keyboard, DECK, Direct Input and advertising-recovery behaviour is completely unchanged.
-- Ready = all mandatory items (former MVP table 1–14) plus items 9–11 work AND lock-screen
+- 13. TV target (§7.3) — separate mandatory TV hardware gate: execute §7.3 E/F, including
+  saved pairing, every control/supported text, repeated Wi-Fi wake after 30-minute standby
+  with the PC off, network/permission recovery, PC/TV isolation and input release.
+  **NOT RUN; wake UNCONFIRMED.** This adds no claim of completed hardware acceptance.
+- PC ready = all mandatory items (former MVP table 1–14) plus items 9–11 work AND lock-screen
   acceptance passes; item 12 is now required for acceptance once the CI-built implementation is
-  installed on the iPad.
+  installed on the iPad. TV ready additionally requires item 13; PC readiness alone does not
+  satisfy the wake requirement.
 - **Status: acceptance test NOT PASSED** — never fully run; awaiting the user's physical session.
 
 ## 10. Known regressions / limitations
@@ -1071,8 +1253,9 @@ can pass it.)
   The C# companion builds and its tests pass locally (`dotnet`, .NET 8, no NuGet).
 - `BTRemote/Resources/company_ids.json` + `service_uuids.json` are not in git (CI downloads them);
   `.xcodeproj` is generated, not committed.
-- Imported upstream features out of scope here: iPhone remote surface, macOS Bluetooth Classic
-  backend, TV remote (legacy `BTRemote/DPadView.swift` — no longer used by DECK).
+- Imported upstream features still out of scope: iPhone remote surface and macOS Bluetooth
+  Classic backend. Legacy `BTRemote/DPadView.swift` is unused by DECK and is not the new TV
+  transport. Direct TV control is approved/spec-defined at §7.3, not implemented; wake unconfirmed.
 
 ## 11. PARKED work / non-goals
 **PARKED — do not continue until a separate owner decision:** superlatency research — force BLE
@@ -1086,14 +1269,12 @@ Windows→Mac build path = GitHub Actions macOS runner.)
 accounts, cloud, process monitoring. (Windows companion / WebSocket transport and dynamic per-app
 panels are no longer non-goals: they are approved and spec-defined at §7.2, implemented in `c8babce`
 and CI-built (runs `36372951698` / `36373205510`); physical verification is pending.)
-Current product is exactly: IPAD → BLE HID → WINDOWS.
+Approved product: iPad → BLE HID → Windows, plus iPad → local Wi-Fi → TCL TV (§7.3).
+The TV network channel is not the parked Windows Wi-Fi Turbo/latency work. No cloud relay,
+custom TV APK, root or mandatory ADB; no unverified Bluetooth/wake transport promise.
 
-**Tooling constraint:** only the current corporate Qwen model + built-in Qwen Code features; no
-Codex, no Claude, no external/paid models or APIs. The final reviewer (`.qwen/agents/reviewer.md`)
-explicitly pins `model: openai-responses:Qwen/Qwen3.8-Flash-Next` and must never inherit the
-generic/no-thinking default worker route; other project-local agents may use `model: inherit`
-per current QWEN/task routing. Keep only the one `reviewer.md` profile unless a future task
-truly needs more.
+Runtime/model/orchestration choices are not product constraints. Applicable global instructions
+and the active owner task govern them; legacy runtime files do not expand scope or authorize merge.
 
 ## 12. Build and verification path
 - Local: Windows; no Xcode/swift/xcodebuild — compilation cannot be checked locally. `git`/`node`
