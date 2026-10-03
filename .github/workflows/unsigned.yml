@@ -40,6 +40,17 @@ jobs:
               -o .build/gamepad-tests
           .build/gamepad-tests
 
+      - name: Test TV protocol, sessions and certificate (SPEC 784bad0 §7.3)
+        run: |
+          set -o pipefail
+          swiftc -swift-version 6 \
+              BTRemote/TVWire.swift \
+              BTRemote/TVIdentity.swift \
+              BTRemote/RemoteTargetSession.swift \
+              BTRemoteTests/TVTests.swift \
+              -o .build/tv-tests
+          .build/tv-tests
+
       - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
         run: |
           set -o pipefail
