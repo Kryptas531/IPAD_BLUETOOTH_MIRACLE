@@ -62,7 +62,15 @@ jobs:
               -destination "generic/platform=iOS" \
               -derivedDataPath .build/DerivedData \
               CODE_SIGNING_ALLOWED=NO \
-              build | xcbeautify
+              build 2>&1 | tee .build/xcodebuild.log | xcbeautify
+
+      - name: Upload compiler diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-build-diagnostics
+          path: .build/xcodebuild.log
+          if-no-files-found: ignore
 
       - name: Package unsigned ipa (Payload zip; unsigned, re-sign on device via SideStore)
         run: |

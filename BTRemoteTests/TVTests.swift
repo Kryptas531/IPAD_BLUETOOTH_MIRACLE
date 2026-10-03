@@ -67,6 +67,16 @@ struct TVTests {
         try expect(TVWire.pairingSecret(clientKey: client, serverKey: server, code: "84zzzz") == nil, "Non-hex pairing code")
 
         let gate = RemoteTargetSession()
+        var releases = HIDSessionReleaseQueue()
+        releases.replace([(1, Data([0])), (2, Data([0, 0]))])
+        try expect(releases.next?.id == 1, "First neutral release queued")
+        try expect(releases.next?.id == 1, "Backpressure retains unaccepted release")
+        releases.accepted()
+        try expect(releases.next?.id == 2, "Other neutral reports cannot overwrite release")
+        releases.replace([(3, Data([0]))])
+        try expect(releases.next?.id == 3, "New teardown replaces prior neutral queue")
+        releases.clear()
+        try expect(releases.next == nil, "Radio reset clears release queue")
         let pc = gate.token
         try expect(gate.accepts(pc), "Initial PC session")
         gate.transition(to: .tv)

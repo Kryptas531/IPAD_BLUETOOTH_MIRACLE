@@ -1,5 +1,14 @@
 import Foundation
 
+/// Neutral releases must survive BLE backpressure independently of the latest input slot.
+struct HIDSessionReleaseQueue {
+    private var frames: [(id: UInt8, data: Data)] = []
+    var next: (id: UInt8, data: Data)? { frames.first }
+    mutating func replace(_ frames: [(id: UInt8, data: Data)]) { self.frames = frames }
+    mutating func accepted() { if !frames.isEmpty { frames.removeFirst() } }
+    mutating func clear() { frames.removeAll() }
+}
+
 /// SPEC §7.3 C — which device input is currently routed to.
 ///
 /// `pc` is the existing Bluetooth HID-over-GATT path to Windows (unchanged); `tv` is the

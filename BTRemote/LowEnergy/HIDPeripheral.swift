@@ -57,6 +57,7 @@ final class HIDPeripheral: NSObject, ObservableObject {
     ]
 
     private var pendingBroadcast: (Data, CBMutableCharacteristic)?
+    private var sessionReleases = HIDSessionReleaseQueue()
     /// SPEC §5.2 E: one latest-wins gamepad state, deliberately separate from the
     /// relative `pendingMouse*` accumulators and from `pendingBroadcast`, so a mouse
     /// or keyboard report can never overwrite a pending gamepad state (and back).
@@ -103,6 +104,7 @@ final class HIDPeripheral: NSObject, ObservableObject {
         isHIDServiceAdded = false
         isReadyToSendNotification = true
         pendingBroadcast = nil
+        sessionReleases.clear()
         pendingGamepad = GamepadPendingState()
         // SPEC §5.2 F/L: after a radio reset the gamepad starts from neutral again, and a
         // host has to subscribe again before any racing state may be sent to it.
@@ -127,6 +129,41 @@ final class HIDPeripheral: NSObject, ObservableObject {
         inactiveCentrals.removeAll()
         connectedCentrals.removeAll()
         centralObjects.removeAll()
+    }
+
+    /// SPEC 784bad0 §7.3 C: discard the old target's pending input and release every
+    /// held report. This leaves pairing, services, report map and advertising intact.
+    func releaseInputSession() {
+        pendingBroadcast = nil
+        pendingGamepad = GamepadPendingState()
+        pendingMouseDX = 0; pendingMouseDY = 0; pendingMouseWheel = 0
+        pendingMouseButtons = []; hasPendingMouse = false
+        performanceMetrics.setPendingMouseCount(0)
+        let neutral: [(id: UInt8, data: Data)] = [
+            (ReportID.keyboard.rawValue, KeyboardReport.zero.data),
+            (ReportID.mouse.rawValue, MouseReport.zero.data),
+            (ReportID.consumerControl.rawValue, ConsumerReport.zero.data),
+            (ReportID.systemControl.rawValue, SystemControlReport.zero.data),
+            (ReportID.gamepad.rawValue, GamepadReport.zero.data),
+        ]
+        for frame in neutral { cachedReports[frame.id] = frame.data }
+        // 255 is a local queue discriminator, never a HID Report ID on the wire.
+        sessionReleases.replace(neutral + [(255, KeyboardReport.zero.data)])
+        drainSessionReleases()
+    }
+
+    private func drainSessionReleases() {
+        guard let pManager else { sessionReleases.clear(); return }
+        while isReadyToSendNotification, let frame = sessionReleases.next {
+            let char = frame.id == 255 ? bootKeyboardInputChar : charsByReportID[frame.id]
+            let recipients = frame.id == ReportID.gamepad.rawValue ? gamepadRecipients() : activeRecipients()
+            guard let char, !recipients.isEmpty else { sessionReleases.accepted(); continue }
+            if pManager.updateValue(frame.data, for: char, onSubscribedCentrals: recipients) {
+                sessionReleases.accepted()
+            } else {
+                isReadyToSendNotification = false // Keep this release for the next ready callback.
+            }
+        }
     }
 
     func sendMouse(_ report: MouseReport) {
@@ -695,6 +732,8 @@ extension HIDPeripheral: @preconcurrency CBPeripheralManagerDelegate {
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
         isReadyToSendNotification = true
+        drainSessionReleases()
+        guard isReadyToSendNotification else { return }
         drainPendingBroadcast()
         drainPendingMouse()
         drainPendingGamepad()

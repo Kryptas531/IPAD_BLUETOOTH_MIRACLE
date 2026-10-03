@@ -181,8 +181,7 @@ struct ContentView: View {
         private func releasePC() {
             pcRelease?(); pcRelease = nil
             directInput.stop()
-            // Neutral reports also clear the peripheral cache if the link has disappeared.
-            hid.sendKeyboard(.zero); hid.sendMouse(.zero); hid.sendConsumer(.zero); hid.sendGamepad(.zero)
+            lowEnergy.releaseInputSession()
         }
 
         private func selectTarget(_ next: RemoteTarget) {
