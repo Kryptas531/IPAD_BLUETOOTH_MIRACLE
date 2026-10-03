@@ -548,9 +548,8 @@ enum TVIdentityStore {
         guard status == errSecSuccess else { throw TVIdentityError.keychain(status) }
     }
 
-    /// Explicitly deletes only our own TV pairing record (exact service/account
-    /// ownership; the RSA key pair and certificate stay for reuse, and Windows
-    /// credentials are never touched). Missing item is not an error.
+    /// Explicit user recovery removes only TV-owned credentials, including a damaged
+    /// client identity. Authentication failures never call this automatically.
     static func forgetPairing() throws {
         let status = SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
@@ -560,6 +559,20 @@ enum TVIdentityStore {
         ] as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw TVIdentityError.keychain(status)
+        }
+        for query: [String: Any] in [
+            [kSecClass as String: kSecClassCertificate,
+             kSecAttrLabel as String: certificateLabel,
+             kSecUseDataProtectionKeychain as String: kCFBooleanTrue!],
+            [kSecClass as String: kSecClassKey,
+             kSecAttrApplicationTag as String: privateKeyTag,
+             kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+             kSecUseDataProtectionKeychain as String: kCFBooleanTrue!],
+        ] {
+            let deletion = SecItemDelete(query as CFDictionary)
+            guard deletion == errSecSuccess || deletion == errSecItemNotFound else {
+                throw TVIdentityError.keychain(deletion)
+            }
         }
     }
 
