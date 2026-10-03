@@ -61,6 +61,12 @@ struct KeyboardView: View {
         @StateObject private var gyro = GyroAimController()
         @StateObject private var windows = WindowsForegroundClient.shared
         @Environment(\.scenePhase) private var scenePhase
+        /// SPEC §7.3 C: the root installs a register closure `(callback?) -> Void`:
+        /// this view registers `releasePCInput` on appear (so the root can invoke it
+        /// synchronously BEFORE switching target) and unregisters (passes `nil`) on
+        /// disappear after teardown. The root guards the registered callback by session
+        /// token, so an old view's unregister cannot clear the new session's callback.
+        var registerPCRelease: (((() -> Void)?) -> Void)? = nil
     #endif
     @State private var text = ""
     @State private var sent = ""
@@ -266,11 +272,13 @@ struct KeyboardView: View {
             // SPEC §5.2 L: resigning active, backgrounding or suspension stops the motion
             // source and neutralizes every racing source, so Windows is never left with a
             // stuck axis, trigger or button and no in-flight sample can write LX afterwards.
+            // SPEC §7.3 C: the same exit/inactive path also cancels every PC input session
+            // artifact (typing queue, arrow repeater, Direct Input capture, held state).
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     configureGyro()
                 } else {
-                    gyro.stop()
+                    releasePCInput()
                 }
             }
             // SPEC §5.2 L: the same neutralization covers the link itself. When the connected
@@ -278,9 +286,11 @@ struct KeyboardView: View {
             // and released, so a still-held brake/gas, ability button or RX is never sent and
             // cached into a disconnected host, and never survives locally into the next session.
             // A reconnect restarts the same single motion pipeline and re-baselines it.
+            // SPEC §7.3 C: the link-gone path clears local/pending state only; the next
+            // session starts neutral and never replays old presses, text or repeats.
             .onChange(of: lowEnergy.connectedCentrals) { centrals in
                 if centrals.isEmpty {
-                    gyro.stop()
+                    releasePCInput()
                 } else {
                     configureGyro()
                 }
@@ -294,7 +304,7 @@ struct KeyboardView: View {
             // restarts the same single motion pipeline and re-baselines it.
             .onChange(of: lowEnergy.gamepadSubscribedCentrals) { centrals in
                 if centrals.isEmpty {
-                    gyro.stop()
+                    releasePCInput()
                 } else if gameInputMode == .racing {
                     configureGyro()
                 }
@@ -303,11 +313,21 @@ struct KeyboardView: View {
                 if added {
                     configureGyro()
                 } else {
-                    gyro.stop()
+                    releasePCInput()
                 }
             }
-            // SPEC §5.2 L: the view disappearing also stops and neutralizes.
-            .onDisappear { gyro.stop() }
+            // SPEC §7.3 C: register the PC session release on appear so the root can
+            // invoke it synchronously before switching target; on disappear run the
+            // teardown first, then unregister so an old view cannot clear the next
+            // session's callback.
+            .onAppear {
+                registerPCRelease?({ self.releasePCInput() })
+            }
+            // SPEC §5.2 L / §7.3 C: the view disappearing also stops and neutralizes.
+            .onDisappear {
+                releasePCInput()
+                registerPCRelease?(nil)
+            }
             // SPEC §7.1 E: opening the "Text entry" surface and focusing its field are different
             // events. Only tapping/focusing the field makes Text entry the visible surface.
             // CONTROL keeps the keyboard safe area so the field, Send and Clear stay visible and
@@ -529,6 +549,35 @@ struct KeyboardView: View {
                 gyro.stop()
             } else {
                 gyro.start(hid)
+            }
+        }
+
+        /// SPEC §7.3 C: the single named teardown for every PC exit path (view disappear,
+        /// app inactivity, or the link going away). Before any next session begins it cancels
+        /// the in-flight typing queue and arrow repeater, releases everything bound to the old
+        /// session (`directInput.stop()` detaches the physical keyboard/mouse; `typist.cancel()`
+        /// clears queue + captured send closure), neutralizes held/sticky modifiers, keyboard,
+        /// mouse and gamepad over the still-existing link, and resets temporary text/focus and
+        /// local state. Old presses, text or repeats are never replayed; the next session
+        /// starts neutral. This changes no BLE pairing or transport behavior.
+        @MainActor private func releasePCInput() {
+            typist.cancel()
+            gyro.stop()
+            directInput.stop()
+            mods = []
+            held = []
+            if !text.isEmpty {
+                resetting = true
+                text = ""
+            }
+            sent = ""
+            focused = false
+            surface = nil
+            showKeyboard = false
+            showDirectInputControls = false
+            if hid.isActive {
+                hid.sendKeyboard(.zero)
+                hid.sendMouse(.zero)
             }
         }
 
@@ -1103,6 +1152,9 @@ private struct ArrowPad: View {
     let onArrow: (Keycode) -> Void
 
     @StateObject private var repeater = ArrowRepeater()
+    #if os(iOS)
+        @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     var body: some View {
         ZStack {
@@ -1126,6 +1178,19 @@ private struct ArrowPad: View {
                 }
                 .onEnded { _ in repeater.stop() }
         )
+        #if os(iOS)
+            // SPEC §7.3 C: a held/repeating arrow must not survive app inactivity or
+            // view exit and must never resume on return; a later drag rebinds `fire`
+            // in `onChanged` before `start`.
+            .onChange(of: scenePhase) { phase in
+                if phase != .active {
+                    repeater.stop()
+                }
+            }
+            .onDisappear {
+                repeater.stop()
+            }
+        #endif
     }
 
     private func glyph(_ char: String, _ key: Keycode, dx: CGFloat, dy: CGFloat) -> some View {
@@ -1152,47 +1217,85 @@ private final class ArrowRepeater: ObservableObject {
 
     func start(_ key: Keycode) {
         guard key != active else { return }
+        // SPEC §7.3 C: `stop()` clears the callback; capture the currently configured
+        // callback across it so a normal re-start (after inactivity or a reconnect)
+        // still sends the first key press and the repeats.
+        let fire = self.fire
         stop()
         active = key
         fire?(key)
-        task = Task { [weak self] in
+        task = Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
             while !Task.isCancelled {
-                self?.fire?(key)
+                fire?(key)
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
         }
     }
 
+    /// SPEC §7.3 C: stop the repeat and clear the callback (a held key never resumes
+    /// after inactivity). The next drag rebinds `fire` before `start`, so the normal
+    /// arrows keep working.
     func stop() {
         task?.cancel()
         task = nil
         active = nil
+        fire = nil
     }
 }
 
 /// paces keyboard reports so each down/up transition is delivered;
 /// without spacing, rapid identical key presses get coalesced and lost.
+///
+/// SPEC §7.3 C: the view cancels this on PC exit/inactive/disconnect. `cancel()` keeps
+/// the in-flight paced task retained and moves the generation on, so a stale drain can
+/// never consume the next session's queue or send through the next session's `send`
+/// closure.
 @MainActor
 private final class KeyTypist: ObservableObject {
     var send: ((KeyboardReport) -> Void)?
 
     private var queue: [KeyboardReport] = []
     private var draining = false
+    private var task: Task<Void, Never>?
+    private var generation: UInt64 = 0
 
     func enqueue(_ reports: [KeyboardReport]) {
         guard !reports.isEmpty else { return }
         queue.append(contentsOf: reports)
         guard !draining else { return }
         draining = true
-        Task { await drain() }
+        let generation = self.generation
+        task = Task { [weak self] in
+            await self?.drain(generation: generation)
+        }
     }
 
-    private func drain() async {
-        while !queue.isEmpty {
+    /// SPEC §7.3 C: clear all pending keyboard queue and callbacks — kill the in-flight
+    /// paced task, discard every queued report and the captured `send` closure, and
+    /// invalidate the current generation. Every call site assigns `send` before
+    /// `enqueue`, so the next session is unaffected.
+    func cancel() {
+        task?.cancel()
+        task = nil
+        queue.removeAll()
+        send = nil
+        draining = false
+        generation &+= 1
+    }
+
+    private func drain(generation: UInt64) async {
+        // A stale drain must not send through the next session's `send` closure or
+        // consume the next session's queue: check generation before the first send and
+        // cancellation + generation again after every sleep. It must never clear a new
+        // session's task/queue/draining state, so on staleness it just returns.
+        guard generation == self.generation else { return }
+        while !Task.isCancelled, generation == self.generation, !queue.isEmpty {
             send?(queue.removeFirst())
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
+        guard !Task.isCancelled, generation == self.generation else { return }
         draining = false
     }
 }

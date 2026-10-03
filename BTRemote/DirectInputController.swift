@@ -333,6 +333,11 @@
         private var chordHeld: KeyboardModifiers = []
         private var releaseChord: ReleaseChord = .defaultChord
         private var observers: [NSObjectProtocol] = []
+        // SPEC §7.3 C: monotonically changing session counter. Every GC handler captures the
+        // generation current at attach time and every queued MainActor task re-checks it (with
+        // `isCapturing`) before touching the host, so a stale physical event can never enter a
+        // new capture session (the PC -> TV -> PC case).
+        private var generation: UInt64 = 0
 
         // GCMouse deltas are in points; tune on-device
         private static let sensitivity: CGFloat = 1
@@ -360,13 +365,20 @@
             pressedKeys.removeAll()
             pressedMouseButtons = []
             modifiers = []
+            chordHeld = []
             lastError = nil
 
+            // SPEC §7.3 C: start begins neutral — bump the generation so tasks queued from a
+            // previously attached handler set can never enter this new capture session.
+            generation &+= 1
             attachHandlers()
             isCapturing = true
         }
 
         func stop() {
+            // SPEC §7.3 C: invalidate the generation before detaching, so an in-flight queued
+            // handler task cannot send a stale physical event into the next session.
+            generation &+= 1
             detachHandlers()
             if isCapturing {
                 sendKeyboard?(.zero)
@@ -375,36 +387,58 @@
             pressedKeys.removeAll()
             pressedMouseButtons = []
             modifiers = []
+            chordHeld = []
             sendKeyboard = nil
             sendMouse = nil
             isCapturing = false
         }
 
         private func attachHandlers() {
+            // SPEC §7.3 C: capture the generation for every handler attached here; each queued
+            // MainActor task checks capturing + generation BEFORE handleKey/Move/Button/Scroll.
+            let generation = self.generation
             if let keyboard = GCKeyboard.coalesced {
                 keyboard.handlerQueue = .main
                 keyboard.keyboardInput?.keyChangedHandler = { [weak self] _, _, keyCode, pressed in
                     let raw = keyCode.rawValue
-                    Task { @MainActor in self?.handleKey(raw: raw, pressed: pressed) }
+                    Task { @MainActor in
+                        guard let self, self.isCapturing, self.generation == generation else { return }
+                        self.handleKey(raw: raw, pressed: pressed)
+                    }
                 }
             }
             if let mouse = GCMouse.current {
                 mouse.handlerQueue = .main
                 let input = mouse.mouseInput
                 input?.mouseMovedHandler = { [weak self] _, dx, dy in
-                    Task { @MainActor in self?.handleMove(dx: dx, dy: dy) }
+                    Task { @MainActor in
+                        guard let self, self.isCapturing, self.generation == generation else { return }
+                        self.handleMove(dx: dx, dy: dy)
+                    }
                 }
                 input?.leftButton.pressedChangedHandler = { [weak self] _, _, pressed in
-                    Task { @MainActor in self?.handleButton(.left, pressed) }
+                    Task { @MainActor in
+                        guard let self, self.isCapturing, self.generation == generation else { return }
+                        self.handleButton(.left, pressed)
+                    }
                 }
                 input?.rightButton?.pressedChangedHandler = { [weak self] _, _, pressed in
-                    Task { @MainActor in self?.handleButton(.right, pressed) }
+                    Task { @MainActor in
+                        guard let self, self.isCapturing, self.generation == generation else { return }
+                        self.handleButton(.right, pressed)
+                    }
                 }
                 input?.middleButton?.pressedChangedHandler = { [weak self] _, _, pressed in
-                    Task { @MainActor in self?.handleButton(.middle, pressed) }
+                    Task { @MainActor in
+                        guard let self, self.isCapturing, self.generation == generation else { return }
+                        self.handleButton(.middle, pressed)
+                    }
                 }
                 input?.scroll.valueChangedHandler = { [weak self] _, _, y in
-                    Task { @MainActor in self?.handleScroll(y) }
+                    Task { @MainActor in
+                        guard let self, self.isCapturing, self.generation == generation else { return }
+                        self.handleScroll(y)
+                    }
                 }
             }
         }

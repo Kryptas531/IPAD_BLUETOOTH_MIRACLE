@@ -8,6 +8,9 @@ struct PressGesture: ViewModifier {
     let onPress: () -> Void
     let onRelease: () -> Void
     @Binding var pressed: Bool
+    #if os(iOS)
+        @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     func body(content: Content) -> some View {
         content.gesture(
@@ -20,10 +23,32 @@ struct PressGesture: ViewModifier {
                     }
                 }
                 .onEnded { _ in
-                    pressed = false
-                    onRelease()
+                    // SPEC §7.3 C: if a teardown (view exit / app inactivity) already
+                    // released, `pressed` is false and must not fire a duplicate
+                    // non-neutral press through `onRelease` again.
+                    if pressed {
+                        pressed = false
+                        onRelease()
+                    }
                 }
         )
+        // SPEC §7.3 C: release the held state on app inactivity (a touch cancellation
+        // arrives through `onEnded`); reactivation must not resume a held press — the
+        // next touch starts a fresh press.
+        #if os(iOS)
+        .onChange(of: scenePhase) { phase in
+            if phase != .active, pressed {
+                pressed = false
+                onRelease()
+            }
+        }
+        #endif
+        .onDisappear {
+            if pressed {
+                pressed = false
+                onRelease()
+            }
+        }
     }
 }
 
