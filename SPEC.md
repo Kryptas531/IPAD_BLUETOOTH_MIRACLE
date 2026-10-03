@@ -838,13 +838,15 @@ this; each layout below is a variant of that same CONTROL surface, not a new mod
   "implemented, physical verification pending" until the owner runs the added §9 checks with the
   helper on the real Windows PC + iPad.
 
-## 7.3 Direct TV target — CONTRACT DEFINED ONLY; NOT IMPLEMENTED; wake UNCONFIRMED
+## 7.3 Direct TV target — base remote implemented; app library expansion approved; wake UNCONFIRMED
 
 Owner-approved expansion: the existing app gains a **TV** target alongside **PC**.
 Target hardware is **iPad Air 11-inch M2 (2024) + TCL 85C755, Wi-Fi only**. The owner
 reports that the native TCL app currently does not wake this TV; that observation does
 not establish the cause or prove that every direct network wake method is impossible.
-This documentation stage changes no application code and performs no hardware test.
+The base remote is implemented at `849f530` (unsigned CI `37156028887`: 107 gamepad
+and 76 TV checks). Physical pairing/control/standby/wake is not yet verified. The owner
+approved the app-library/bookmark expansion below on 2026-10-04 while testing that IPA.
 
 ### A. Scope and preserved PC behavior
 - The iPad talks directly to the TV on the local network. No always-on PC, Windows
@@ -994,14 +996,63 @@ powered-on control alone does not make this TV product ready.
   controls are held leaves neither target stuck. Re-run the existing §9 PC regression
   spot checks for mouse, typing/modifiers, Direct Input, CONTROL, GAME/RACING and BLE
   recovery, plus helper fallback. Remaining pre-existing hardware gates stay pending.
-- **Current status: specification only; no TV implementation, build, installation,
-  pairing, control, standby or wake evidence. Wake: UNCONFIRMED.** TV ready requires
-  both implementation checks and the hardware results above, recorded against Git SHA.
+- **Current status:** base TV implementation/unsigned build at `849f530`, CI
+  `37156028887`; downloaded arm64 IPA verified. No physical pairing/control/standby/wake
+  evidence is recorded. Wake: **UNCONFIRMED**. Full TV readiness still requires E/F.
+
+### G. App library, bookmarks and direct actions — owner-approved expansion
+- TV opens into a useful library with **Apps / Bookmarks / Remote** surfaces, separate
+  from the unchanged PC mode picker. App/bookmark tiles launch with one explicit tap;
+  the navigation remote remains available for in-app interaction. Both orientations work.
+- Users can add, edit, delete, favorite and reorder their TV apps and bookmarks. App
+  targets accept an Android package ID or a supported deep link; bookmarks retain a
+  user-defined title and a content/site/playlist URL. A small editable catalog is a
+  starting point, not a discovered list of installed TV apps. The protocol does not
+  provide a verified generic installed-app enumeration: do not fabricate that list.
+- Use the existing Remote v2 negotiated **APP_LINK (512)** feature and
+  `RemoteMessage.remote_app_link_launch_request` **field 90**, with `app_link` field 1
+  inside it. Preserve the original key/IME/power features and request APP_LINK additively.
+  Reference: [pinned proto](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/src/androidtvremote2/remotemessage.proto),
+  [pinned sender](https://github.com/tronikos/androidtvremote2/blob/b09f21432ba33e42536215a8f41641d801cf6a2c/src/androidtvremote2/remote.py)
+  and [author's package-launch implementation](https://github.com/tronikos/androidtvremote2/commit/c5d7292e8efe6201854884d8402572398ee11c2a).
+  Bare package IDs are converted to `market://launch?id=<package>` as in that reference.
+  This compatibility path and each app's deep-link handling require TCL verification;
+  a launch may fail or open a store page. Users can replace the target with an app-supported
+  deep link. Do not promise universal app/content/browser launch or silent installation.
+- Provide an explicit **Open link on TV** action (typed or explicitly pasted URL),
+  save-as-bookmark, and a YouTube search shortcut using a URL-encoded query. These use
+  the selected TV transport; never open the target in an iPad browser as a fallback.
+  Show actionable unavailable/unsupported states and the difference between a sent
+  command and an observed current app. Do not claim a bookmark loaded from transport ACK.
+- Show the current TV app only when supplied by Remote v2 `remote_ime_key_inject`
+  app-info/package metadata; otherwise unknown. Clear it on loss/target/session change.
+  Offer media previous/next, rewind/fast-forward and stop with key codes from the pinned
+  proto, without asserting that every app honors them. Do not infer field activity or
+  authorize text from the current-app label alone.
+- Recent commands retain at most ten existing library item IDs after an explicit send;
+  they are never replayed on reconnect, foreground return or app launch. Removing an
+  item removes its recent entries. Bound and validate labels, package IDs, URI schemes,
+  target length and library size before persistence or sending. Reject local files,
+  executable/script URI schemes and malformed targets, without logging submitted URLs.
+- Keep user library targets (URLs can contain credentials) in a separate TV-only
+  Keychain record. No library URLs, pairing material or typed search text in logs/commits.
+  Default catalog values contain no secrets. Persistence errors preserve existing user
+  data and surface a useful error; do not silently replace it with defaults. Editing,
+  pasting and app launch remain explicit foreground actions. No new dependencies,
+  signing/multicast/Bonjour entitlements, PC helper requirements or BLE changes.
+- Acceptance for this expansion: actual production encoder fixture for field90 and
+  feature negotiation; unsupported/disconnected/stale-session launch rejection; URI
+  and package conversion including Unicode/escaping; library CRUD/order/favorite/recent
+  and serialization/error cases; current-app invalidation independent of IME; actual
+  exact-HEAD unsigned CI/IPA and independent review. Existing E/F physical gates remain
+  separate. The owner explicitly requests code/build delivery while testing the base
+  remote; this does not establish physical compatibility or wake readiness.
 
 ## 8. Active milestone
-**New bounded TV task (§7.3):** specification only. Its first implementation gate is real
-pairing → control → standby → iPad wake, repeated after 30 minutes. Complete that feasibility
-gate before broader TV UI work; existing PC acceptance remains outstanding as recorded below.
+**Current bounded TV task (§7.3 G):** deliver app launching, bookmarks and a useful TV
+library while the owner tests the base IPA. Base code/build readiness is recorded above;
+physical pairing → control → standby → iPad wake (including 30 minutes) remains pending.
+Existing PC acceptance also remains outstanding as recorded below.
 
 Per the reconciled roadmap (2026-09-20/21, renumbered for §7.1/§7.2):
 1. Unified CONTROL surface — UX canon (§7) + unified control contract (§7.1); this absorbs the
