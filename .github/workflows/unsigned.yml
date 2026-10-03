@@ -52,7 +52,17 @@ jobs:
               BTRemote/RemoteTargetSession.swift \
               BTRemoteTests/TVTests.swift \
               -o .build/tv-tests
-          .build/tv-tests
+          # Synthetic loopback TLS server exercises the production Security callback.
+          # The temporary test key/certificate never enter the application or artifacts.
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+              -subj '/CN=TV-callback-test' \
+              -keyout .build/tv-test-key.pem -out .build/tv-test-cert.pem >/dev/null 2>&1
+          openssl s_server -accept 127.0.0.1:46466 \
+              -cert .build/tv-test-cert.pem -key .build/tv-test-key.pem \
+              -www -quiet >.build/tv-tls-fixture.log 2>&1 &
+          tls_fixture_pid=$!
+          trap 'kill "$tls_fixture_pid" 2>/dev/null || true' EXIT
+          TV_TLS_PROBE_PORT=46466 .build/tv-tests
 
       - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
         run: |

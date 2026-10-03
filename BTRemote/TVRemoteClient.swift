@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CryptoKit
 @preconcurrency import Network
 @preconcurrency import Security
 
@@ -47,6 +48,7 @@ final class TVRemoteClient: ObservableObject {
     private var powerDeadline: Task<Void, Never>?
     private var pathMonitor: NWPathMonitor?
     private var lastPathAvailable = false
+    private var pathObserved = false
     private var active = true
     private var requested = false
     private var retries = 0
@@ -168,28 +170,14 @@ final class TVRemoteClient: ObservableObject {
             sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
             let check = TVPeerCheck(); peer = check
             let saved = pairing
-            sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, trust, complete in
-                let reference = sec_trust_copy_ref(trust).takeRetainedValue()
-                guard let certificate = SecTrustGetCertificateAtIndex(reference, 0) else {
-                    check.record(nil, rejected: true); complete(false); return
-                }
-                let der = SecCertificateCopyData(certificate) as Data
-                do {
-                    // A temporary candidate is accepted ONLY on the first pairing channel.
-                    // The displayed PIN binds both RSA keys before any pin is persisted.
-                    if !pairingChannel {
-                        guard let saved else { throw TVIdentityError.rePairRequired }
-                        try TVIdentityStore.verifyPeerCertificate(der, pairing: saved)
-                    }
-                    check.record(der, rejected: false); complete(true)
-                } catch { check.record(nil, rejected: true); complete(false) }
-            }, queue)
+            sec_protocol_options_set_verify_block(tls.securityProtocolOptions,
+                Self.makePeerVerifier(pairingChannel: pairingChannel, saved: saved, check: check), queue)
             let parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
             let port = NWEndpoint.Port(rawValue: pairingChannel ? 6467 : 6466)!
             let socket = NWConnection(host: NWEndpoint.Host(host), port: port, using: parameters)
             connection = socket
             let generation = sessionGeneration
-            socket.stateUpdateHandler = { [weak self] status in
+            socket.stateUpdateHandler = { @Sendable [weak self] status in
                 Task { @MainActor [weak self] in
                     guard let self, self.matches(socket, generation) else { return }
                     switch status {
@@ -220,8 +208,29 @@ final class TVRemoteClient: ObservableObject {
         }
     }
 
+    // Security invokes this on a background queue. Construct outside MainActor and
+    // mark Sendable so Swift 6 cannot insert a main-executor assertion at callback entry.
+    nonisolated private static func makePeerVerifier(pairingChannel: Bool, saved: TVSavedPairing?,
+                                                    check: TVPeerCheck) -> sec_protocol_verify_t {
+        { @Sendable _, trust, complete in
+            let reference = sec_trust_copy_ref(trust).takeRetainedValue()
+            guard let certificate = SecTrustGetCertificateAtIndex(reference, 0) else {
+                check.record(nil, rejected: true); complete(false); return
+            }
+            let der = SecCertificateCopyData(certificate) as Data
+            do {
+                // Candidate acceptance is restricted to pairing; the PIN binds both keys.
+                if !pairingChannel {
+                    guard let saved else { throw TVIdentityError.rePairRequired }
+                    try TVIdentityStore.verifyPeerCertificate(der, pairing: saved)
+                }
+                check.record(der, rejected: false); complete(true)
+            } catch { check.record(nil, rejected: true); complete(false) }
+        }
+    }
+
     private func receive(_ socket: NWConnection, _ generation: UInt64) {
-        socket.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
+        socket.receive(minimumIncompleteLength: 1, maximumLength: 65536) { @Sendable [weak self] data, _, complete, error in
             Task { @MainActor [weak self] in
                 guard let self, self.matches(socket, generation) else { return }
                 if let data {
@@ -312,7 +321,7 @@ final class TVRemoteClient: ObservableObject {
     private func send(_ data: Data) {
         guard active, let socket = connection else { return }
         let generation = sessionGeneration
-        socket.send(content: data, completion: .contentProcessed { [weak self] error in
+        socket.send(content: data, completion: .contentProcessed { @Sendable [weak self] error in
             guard let error else { return }
             Task { @MainActor [weak self] in
                 guard let self, self.matches(socket, generation) else { return }
@@ -334,7 +343,7 @@ final class TVRemoteClient: ObservableObject {
             old.stateUpdateHandler = nil
             if !releases.isEmpty {
                 var data = Data(); releases.forEach { data.append($0) }
-                old.send(content: data, completion: .contentProcessed { _ in old.cancel() })
+                old.send(content: data, completion: .contentProcessed { @Sendable _ in old.cancel() })
                 queue.asyncAfter(deadline: .now() + .milliseconds(250)) { old.cancel() }
             } else { old.cancel() }
         }
@@ -373,11 +382,13 @@ final class TVRemoteClient: ObservableObject {
     private func monitorPath() {
         guard pathMonitor == nil else { return }
         lastPathAvailable = false
+        pathObserved = false
         let monitor = NWPathMonitor(); pathMonitor = monitor
-        monitor.pathUpdateHandler = { [weak self] path in
+        monitor.pathUpdateHandler = { @Sendable [weak self] path in
             let available = path.status == .satisfied
             Task { @MainActor [weak self] in
                 guard let self, self.pathMonitor === monitor, self.active else { return }
+                self.pathObserved = true
                 let returned = available && !self.lastPathAvailable
                 self.lastPathAvailable = available
                 if returned, self.connection == nil, self.requested, self.pairing != nil {
@@ -387,6 +398,50 @@ final class TVRemoteClient: ObservableObject {
         }
         monitor.start(queue: queue)
     }
+
+    /// Executes the production NWPathMonitor callback on its real background queue.
+    /// No connection, key creation, pairing, or local-network request is performed.
+    static func runNoNetworkCallbackCheck() async -> Bool {
+        let probe = TVRemoteClient()
+        probe.monitorPath()
+        defer { probe.disconnect() }
+        for _ in 0..<100 {
+            if probe.pathObserved { return true }
+            do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return false }
+        }
+        return false
+    }
+
+    #if os(macOS)
+    /// CI-only loopback TLS fixture invokes the SAME Security callback as Pair.
+    /// No TV credentials/pins are created or saved; traffic stays on 127.0.0.1.
+    static func runLoopbackTLSCallbackCheck(port: UInt16) async -> (candidate: Bool, pinned: Bool, mismatch: Bool) {
+        func probe(pairingChannel: Bool, saved: TVSavedPairing?) async -> (Data?, Bool) {
+            let check = TVPeerCheck()
+            let tls = NWProtocolTLS.Options()
+            let callbackQueue = DispatchQueue(label: "BTRemote.TV.callback-test")
+            sec_protocol_options_set_verify_block(tls.securityProtocolOptions,
+                makePeerVerifier(pairingChannel: pairingChannel, saved: saved, check: check), callbackQueue)
+            let socket = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!,
+                                      using: NWParameters(tls: tls, tcp: NWProtocolTCP.Options()))
+            defer { socket.cancel() }
+            socket.start(queue: callbackQueue)
+            for _ in 0..<100 {
+                let outcome = check.snapshot()
+                if outcome.0 != nil || outcome.1 { return outcome }
+                do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return (nil, false) }
+            }
+            return (nil, false)
+        }
+        let candidate = await probe(pairingChannel: true, saved: nil)
+        guard let der = candidate.0, !candidate.1 else { return (false, false, false) }
+        let saved = TVSavedPairing(host: "127.0.0.1", label: "CI fixture", serverCertificateSHA256: Data(SHA256.hash(data: der)))
+        let pinned = await probe(pairingChannel: false, saved: saved)
+        var changed = saved; changed.serverCertificateSHA256 = Data(repeating: 0, count: 32)
+        let mismatch = await probe(pairingChannel: false, saved: changed)
+        return (true, pinned.0 == der && !pinned.1, mismatch.0 == nil && mismatch.1)
+    }
+    #endif
     static func privateAddress(_ address: String) -> Bool {
         guard !address.isEmpty, address == address.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
         if let ipv4 = IPv4Address(address) {

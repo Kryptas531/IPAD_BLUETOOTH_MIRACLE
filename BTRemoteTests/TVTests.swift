@@ -36,7 +36,17 @@ struct TVTests {
         })
     }
 
-    static func main() throws {
+    static func main() async throws {
+        let callbackReturned = await TVRemoteClient.runNoNetworkCallbackCheck()
+        try expect(callbackReturned, "Production network callback runs off-main and returns to MainActor without a runtime trap")
+        #if os(macOS)
+        if let value = ProcessInfo.processInfo.environment["TV_TLS_PROBE_PORT"], let port = UInt16(value), port != 0 {
+            let tls = await TVRemoteClient.runLoopbackTLSCallbackCheck(port: port)
+            try expect(tls.candidate, "Production Security callback accepts pairing candidate on real background TLS queue without crashing")
+            try expect(tls.pinned, "Real TLS callback accepts exact saved certificate")
+            try expect(tls.mismatch, "Real TLS callback rejects changed certificate without relaxing pinning")
+        }
+        #endif
         try libraryChecks()
         for address in ["10.0.0.2", "172.16.0.2", "172.31.255.254", "192.168.1.5", "fd00::2", "fe80::2"] {
             try expect(TVRemoteClient.privateAddress(address), "Private TV address accepted")
