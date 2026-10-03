@@ -1,98 +1,61 @@
-# AGENTS.md — provider-neutral operating rules
+# AGENTS.md — project instructions
 
-Repository: `Kryptas531/IPAD_BLUETOOTH_MIRACLE` (iPad → BLE HID → Windows controller).
-Single canonical spec: `SPEC.md` (versioned by Git SHA only). Git history is the archive —
-no parallel roadmap/architecture/P2/layout docs.
+Repository: `Kryptas531/IPAD_BLUETOOTH_MIRACLE`. An iPad controls Windows through
+BLE HID; direct Wi-Fi TV control is specified in `SPEC.md` §7.3 and is not implemented.
 
-## Read order
-1. `AGENTS.md` → 2. `SPEC.md` → 3. active task / active `.pi/` prompt →
-4. directly relevant code and repository state.
+## Canon and read order
+- Read this file, `SPEC.md`, the active task, then directly relevant code and Git state.
+- `SPEC.md` is the single product/technical specification, versioned by Git SHA.
+  Current Git and the spec beat old summaries. Git history is the archive; do not create
+  parallel roadmap, architecture or layout specifications.
+- Runtime-specific material (`QWEN.md`, `.qwen/`, `.pi/`) is not the default instruction
+  chain. Consult it only for an explicitly requested runtime workflow; it does not
+  override the active task or define repository-wide agent roles or merge authorization.
 
-Provider-specific files are NOT part of the default MAIN Pi read order.
+## Change boundaries
+- Change behavior, architecture, UX, acceptance or scope in a separate `spec(...)`
+  commit before implementation; implementation commits/PRs reference that spec SHA.
+  Pure fixes restoring specified behavior do not require a new spec commit.
+- Preserve Windows pairing, BLE/HOGP reports, keyboard, mouse, Direct Input, GAME/RACING,
+  CONTROL and the optional foreground helper. TV input must remain separate (§7.3).
+- Protected: `BTRemote/LowEnergy/`, `BTRemote/Classic/`, `BTRemote/HIDInput.swift`,
+  `BTRemote/HIDReports.swift`, Bluetooth resource JSONs, `BTRemote/Info.plist` and
+  `BTRemote/entitlements.plist`. Changes require a concrete technical reason, the exact
+  SPEC authorization and focused review; TV scope is not a blanket BLE/signing exception.
+- Keep PARKED/non-goals in §11 parked. Reuse working code; no unrelated fixes, style
+  rewrites, or new dependencies without a concrete need and compatible licensing.
+- Preserve upstream attribution to `jqssun/darwin-bt-remote`, AGPL-3.0-only and `LICENSE`.
 
-- `QWEN.md` and `.qwen/*` apply only when Qwen Code itself is explicitly being used.
-- A Pi MAIN session using a Qwen model must NOT treat `QWEN.md` as its runtime instructions.
-- Model family/name does not determine runtime role.
+## Build and verification
+- XcodeGen generates the uncommitted Xcode project from `project.yml` (Swift 6,
+  strict concurrency, iOS 15 minimum). `ci_scripts/ci_post_clone.sh` installs XcodeGen,
+  downloads the two missing Nordic Bluetooth JSON resources and generates the project.
+- iPad delivery uses `.github/workflows/unsigned.yml`: macOS runner → dependency-free
+  Swift checks → unsigned iPhoneOS Release build (`CODE_SIGNING_ALLOWED=NO`) →
+  `btr-remote-unsigned-ipa` containing `BTRemote.ipa`. Install via SideStore/Sideloadly,
+  re-signed with a free Apple ID. Preserve this path.
+- That workflow runs on `main` pushes or `workflow_dispatch`; a feature-branch push
+  alone does not trigger it. When CI is required, verify the actual tested commit.
+- On macOS, `build.sh` supplies the existing lint/build/package commands; the workflow
+  supplies the dependency-free `swiftc` test invocation. Windows has no Xcode build.
+  For companion changes use `dotnet build companion/WindowsForeground/WindowsForeground.csproj -c Release`
+  and `dotnet run --project companion/WindowsForeground.Tests/WindowsForeground.Tests.csproj -c Release`
+  (see `companion/README.md`).
+- Documentation-only edits: inspect the full diff and cross-section consistency;
+  do not rebuild an unchanged application. CI proves compilation/tests, not hardware
+  behavior. Physical acceptance remains in §9 and §7.3; TV wake is unconfirmed until tested.
 
-## Rules
-- Current Git + current `SPEC.md` beat old summaries and old docs.
-- Inspect code/diff/CI before claiming status. CI does not prove physical behavior.
-- No scope expansion without a preceding SPEC commit (e.g. `spec(game): define gyro aim behavior`,
-  then implementation commits referencing that spec SHA). Pure fixes restoring already-specified
-  behavior do not require a spec commit.
-- Minimal diffs; reuse existing code; no rewriting working code for style; no new dependencies or
-  abstractions without a concrete need.
-- Protected BLE/HOGP code requires an explicit technical reason and focused review:
-  `BTRemote/LowEnergy/`, `BTRemote/Classic/`, `BTRemote/HIDInput.swift`, `BTRemote/HIDReports.swift`.
-- Do not continue superlatency work (PARKED, see `SPEC.md` §11) without a separate owner decision.
-- Never commit credentials, downloaded IPA/ZIPs, SideStore data, probes (`rawprobe/`), temp
-  folders (`.qwen/tmp`), or unrelated scratch.
-- Never silently fix unrelated findings.
-
-## Roles
-- **Builder:** implementation role. In Pi autonomous runs this is `qwen-builder`.
-- **Reviewer:** independent read-only review role. In Pi autonomous runs this is `qwen-reviewer`.
-- **Orchestrator:** the root/main Pi session. Its role comes from the active Pi session and prompt,
-  NOT from model family or provider name.
-- MAIN may run on Qwen, Luna, Sol, or another configured model without changing its role.
-- MAIN coordinates implementation/review and does not act as the routine product-code writer.
-- External CLI subagents such as `claude-code`, `codex-exec`, and `cursor-agent` remain prohibited.
-- `QWEN.md` and `.qwen/*` are Qwen Code runtime material only.
-
-## Merge authorization
-There are two distinct delivery modes:
-
-1. **Manual flow**
-   - builder/reviewer may prepare a PASSed PR;
-   - merge requires a separate explicit owner/ChatGPT merge request.
-
-2. **Owner-invoked Pi `/autopilot`**
-   - invoking `/autopilot` is explicit authorization for that autonomous run;
-   - MAIN may push, create/update PRs, wait for CI, repair repository-fixable failures,
-     and merge automatically once every gate in the active Pi autopilot prompt passes;
-   - no additional owner confirmation is required between PASS, CI GREEN, and normal merge.
-
-Do not reinterpret an active owner-invoked Pi autopilot as manual mode merely because
-the MAIN model is Qwen.
-
-## Git workflow
-1. fetch + preflight (never assume local `main == origin/main`; if diverged → STOP and report) →
-2. branch from verified `origin/main` → 3. if contract/scope changes: SPEC commit first →
-4. implementation in small commits → 5. verification → 6. push branch → 7. open PR →
-8. independent reviewer reviews committed exact HEAD → 9. reviewer returns PASS /
-CHANGES REQUIRED → 10. builder fixes concrete findings when required →
-11. delivery follows the active mode:
-   - manual flow: stop before merge and wait for explicit merge instruction;
-   - owner-invoked Pi `/autopilot`: merge automatically after all documented review,
-     exact-HEAD CI, mergeability, protection, and manual/hardware gates pass →
-12. after merge, local `main` updates by fast-forward only.
-
-Do not push feature work directly to `main`. No `reset --hard`, `git clean -fd`, force-push, or
-published-history rewrites. Do not delete or commit unknown local scratch.
-
-## Commit naming
-`type(scope): concrete outcome` — allowed types: `spec`, `feat`, `fix`, `test`, `docs`, `refactor`,
-`chore`, `ci`. One concern per commit. Good: `fix(keyboard): restore sticky modifier behavior`,
-`docs(readme): explain project goal and upstream origin`. Bad: `update`, `changes`, `fix stuff`,
-`p2`, `final`, `try again`.
-
-## PR format
-Title follows the commit naming rule. Body (short and factual):
-
-```text
-SPEC:
-BASE:
-GOAL:
-
-CHANGED:
-VERIFIED:
-PHYSICAL TEST:
-RISKS:
-```
-
-## Task checkpoint
-Provider-specific checkpoints are not canonical repository truth.
-
-- MAIN Pi does not read `.qwen/CHECKPOINT.md` by default.
-- `.qwen/CHECKPOINT.md` is relevant only to an explicitly running Qwen Code workflow.
-- Git state and `SPEC.md` always beat any temporary provider-specific checkpoint.
+## Git delivery
+- Fetch/preflight before delivery; verify the worktree, branch, base and local/remote
+  `main` relationship. Stop on divergent `main`; do not overwrite unrelated work.
+  Use a feature branch based on verified `origin/main`, or the task's verified current
+  worktree/branch. Never push feature changes directly to `main`.
+- Keep small commits. Review the committed exact HEAD independently; verify relevant
+  checks and hardware gates before delivery. Push/PR require task authorization;
+  merge requires a separate explicit owner request. After merge, update `main` by
+  fast-forward only. No force-push or published-history rewriting.
+- Commit/PR title: `type(scope): concrete outcome`; types: `spec`, `feat`, `fix`, `test`,
+  `docs`, `refactor`, `chore`, `ci`. PR body: `SPEC`, `BASE`, `GOAL`, `CHANGED`, `VERIFIED`,
+  `PHYSICAL TEST`, `RISKS`, with concise factual values.
+- Do not commit credentials, downloaded IPA/ZIPs, SideStore data, `rawprobe/`,
+  `.qwen/tmp/`, build output or unrelated scratch; preserve unknown local files.
