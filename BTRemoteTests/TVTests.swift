@@ -21,6 +21,12 @@ struct TVTests {
     }
 
     static func main() throws {
+        for address in ["10.0.0.2", "172.16.0.2", "172.31.255.254", "192.168.1.5", "fd00::2", "fe80::2"] {
+            try expect(TVRemoteClient.privateAddress(address), "Private TV address accepted")
+        }
+        for address in ["8.8.8.8", "127.0.0.1", "172.32.0.1", "224.0.0.1", "::1", "2001:4860::8888", "192.168.1.2:6466", "tv.local", " 10.0.0.2"] {
+            try expect(!TVRemoteClient.privateAddress(address), "Public, loopback, named or custom-port address rejected")
+        }
         // Reference bytes from polo.proto/remotemessage.proto at SPEC 784bad0's pinned revision.
         let request = TVWire.encodedPolo(.pairingRequest(serviceName: "atvremote", clientName: "BTRemote"))
         try expect(request == hex("1c080210c80152150a0961747672656d6f74651208425452656d6f7465"), "Polo request bytes")
@@ -30,6 +36,8 @@ struct TVTests {
         try expect(TVWire.decodePolo(ack) == .secretAck(secret), "Polo nested secret acknowledgement")
         if case .rejected = TVWire.decodePolo(hex("fa0100")) { checks += 1 }
         else { throw TVTestError.failed("Polo acknowledgement without status accepted") }
+        if case .rejected = TVWire.decodePolo(hex("080110c8015a00")) { checks += 1 }
+        else { throw TVTestError.failed("Different Polo protocol version accepted") }
 
         let up = TVRemoteWire.encoded(.key(.dpadUp, direction: .short))
         try expect(up == hex("06520408131003"), "Reference DPAD short packet")

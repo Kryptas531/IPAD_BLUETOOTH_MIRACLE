@@ -437,7 +437,9 @@ public enum TVWire {
         }
         let statusRaw = TVProtobuf.varint(fields, 2)
         let status = statusRaw.flatMap(TVPoloStatus.init(rawValue:))
-        guard status == .ok else { return .rejected(status: status, fields: fields) }
+        guard status == .ok, TVProtobuf.varint(fields, 1) == TVProtocol.protocolVersion else {
+            return .rejected(status: status, fields: fields)
+        }
         if let ack = TVProtobuf.nested(fields, 11) {
             return .pairingRequestAck(serverName: TVProtobuf.string(ack, 1))
         }

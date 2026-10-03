@@ -46,6 +46,7 @@ jobs:
           swiftc -swift-version 6 \
               BTRemote/TVWire.swift \
               BTRemote/TVIdentity.swift \
+              BTRemote/TVRemoteClient.swift \
               BTRemote/RemoteTargetSession.swift \
               BTRemoteTests/TVTests.swift \
               -o .build/tv-tests

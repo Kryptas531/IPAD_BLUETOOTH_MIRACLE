@@ -355,7 +355,7 @@ final class TVRemoteClient: ObservableObject {
         }
         monitor.start(queue: queue)
     }
-    private static func privateAddress(_ address: String) -> Bool {
+    static func privateAddress(_ address: String) -> Bool {
         guard !address.isEmpty, address == address.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
         if let ipv4 = IPv4Address(address) {
             let bytes = Array(ipv4.rawValue)

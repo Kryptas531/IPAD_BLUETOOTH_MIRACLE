@@ -40,9 +40,11 @@ struct ContentView: View {
             #if os(iOS)
                 NavigationView {
                     VStack(spacing: 0) {
-                        Picker("Control target", selection: Binding(get: { target }, set: selectTarget)) {
-                            Text("PC").tag(RemoteTarget.pc)
-                            Text("TV").tag(RemoteTarget.tv)
+                        Picker("Control target", selection: Binding(get: { targetRaw }, set: { value in
+                            if let next = RemoteTarget(rawValue: value) { selectTarget(next) }
+                        })) {
+                            Text("PC").tag(RemoteTarget.pc.rawValue)
+                            Text("TV").tag(RemoteTarget.tv.rawValue)
                         }
                         .pickerStyle(.segmented)
                         .padding(.horizontal).padding(.vertical, 6)
@@ -55,7 +57,7 @@ struct ContentView: View {
                 }
                 .navigationViewStyle(.stack)
                 .background(PointerLockHost(locked: directInput.isCapturing))
-                .onChange(of: scenePhase, perform: sceneChanged)
+                .onChange(of: scenePhase) { phase in sceneChanged(phase) }
                 .onChange(of: hid.isConnected) { _ in renewPCSession() }
                 .onChange(of: hid.isActive) { _ in renewPCSession() }
             #else
