@@ -60,6 +60,7 @@ final class TVRemoteClient: ObservableObject {
 
     var canSendKeys: Bool { active && state == .connected && session.activeFeatures.contains(.key) }
     var textEntryAvailable: Bool { active && session.textEntryAvailable }
+    var textFieldCounter: Int32? { session.activeFieldCounter }
     var canRequestPower: Bool { canSendKeys && session.activeFeatures.contains(.power) && !powerPending }
 
     func beginPairing(host: String, label: String) {

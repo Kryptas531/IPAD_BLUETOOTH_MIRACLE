@@ -1,6 +1,9 @@
 import Foundation
 
 enum AppSettings {
+    static let remoteTargetKey = "BTRemote.remoteTarget"
+    static let tvHostKey = "BTRemote.tvHost"
+    static let tvLabelKey = "BTRemote.tvLabel"
     static let touchpadSensitivityKey = "BTRemote.touchpadSensitivity"
     static let scrollSensitivityKey = "BTRemote.scrollSensitivity"
     static let autoAdvertiseKey = "BTRemote.autoAdvertise"

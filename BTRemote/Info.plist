@@ -29,7 +29,7 @@
 	<key>NSMotionUsageDescription</key>
 	<string>BTRemote uses device motion to control the mouse in GAME mode.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>BTRemote connects to your paired Windows PC on the local network to show app-specific controls.</string>
+	<string>BTRemote connects to your paired Windows PC for app-specific controls and to your paired TV for remote control on the local network.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
