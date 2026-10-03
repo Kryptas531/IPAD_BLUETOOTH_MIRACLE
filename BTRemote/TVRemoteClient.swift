@@ -31,6 +31,8 @@ final class TVRemoteClient: ObservableObject {
     @Published private(set) var deviceLabel = "TV"
     @Published private(set) var lastError: String?
     @Published private(set) var sessionGeneration: UInt64 = 0
+    @Published private(set) var currentApp: String?
+    @Published private(set) var launchFeedback: String?
     private var session = TVSession()
     private var pairing: TVSavedPairing?
     private var identity: TVIdentityMaterial?
@@ -62,6 +64,17 @@ final class TVRemoteClient: ObservableObject {
     var textEntryAvailable: Bool { active && session.textEntryAvailable }
     var textFieldCounter: Int32? { session.activeFieldCounter }
     var canRequestPower: Bool { canSendKeys && session.activeFeatures.contains(.power) && !powerPending }
+    var canLaunchApps: Bool { active && session.appLaunchAvailable }
+
+    /// A successful return means queued on this connection, not that TV opened the content.
+    @discardableResult
+    func launch(_ target: TVLaunchTarget, expectedGeneration: UInt64) -> Bool {
+        guard active, connection != nil, sessionGeneration == expectedGeneration,
+              let frame = session.launchFrame(target, expectedGeneration: session.generation) else { return false }
+        send(frame)
+        launchFeedback = "Command sent to TV. Check the TV screen."
+        return true
+    }
 
     func beginPairing(host: String, label: String) {
         guard active else { return }
@@ -267,17 +280,24 @@ final class TVRemoteClient: ObservableObject {
                     pairing = try TVIdentityStore.loadPairing()
                 } catch { lastError = "Connected, but the updated address could not be saved." }
             }
-        case .imeShowRequest(let fields), .imeKeyInject(let fields):
-            if let field = TVProtobuf.nested(fields, 2) {
-                let counter = Int32(truncatingIfNeeded: TVProtobuf.varint(field, 1) ?? 0)
-                // No metadata => no text capability. Never infer a field from a batch alone.
-                session.noteIMEField(counter: counter, active: true, supported: true)
-            } else { session.markTextEntryUnsupported(reason: "TV has no supported active input field.") }
+        case .imeKeyInject(let fields):
+            let appInfo = TVProtobuf.nested(fields, 1)
+            session.noteCurrentApp(appInfo.flatMap { TVProtobuf.string($0, 12) })
+            noteField(fields)
+        case .imeShowRequest(let fields): noteField(fields)
         case .imeBatchEdit(let ime, let field): session.noteIMEBatchEdit(imeCounter: ime, fieldCounter: field)
         case .remoteError: fail("TV Remote Service rejected a command. Retry or explicitly re-pair.", retry: false); return
         default: break // Unknown future messages are harmless; their bounded envelope was parsed.
         }
         publish()
+    }
+
+    private func noteField(_ fields: [TVWireField]) {
+        if let field = TVProtobuf.nested(fields, 2) {
+            let counter = Int32(truncatingIfNeeded: TVProtobuf.varint(field, 1) ?? 0)
+            // No metadata => no text capability. Never infer a field from a batch alone.
+            session.noteIMEField(counter: counter, active: true, supported: true)
+        } else { session.markTextEntryUnsupported(reason: "TV has no supported active input field.") }
     }
 
     private func send(_ frame: TVOutgoingRemote) { send(TVRemoteWire.encoded(frame)) }
@@ -301,6 +321,7 @@ final class TVRemoteClient: ObservableObject {
         let releases = session.releaseAllHeldKeys().map(TVRemoteWire.encoded)
         let old = connection; connection = nil
         sessionGeneration &+= 1; reader.reset(); pairStep = nil; isAwaitingCode = false
+        currentApp = nil; launchFeedback = nil
         if let old {
             old.stateUpdateHandler = nil
             if !releases.isEmpty {
@@ -310,7 +331,10 @@ final class TVRemoteClient: ObservableObject {
             } else { old.cancel() }
         }
     }
-    private func publish() { state = session.connection; power = session.power; powerPending = session.pendingPower }
+    private func publish() {
+        state = session.connection; power = session.power; powerPending = session.pendingPower
+        currentApp = session.currentApp
+    }
     private func armDeadline(seconds: UInt64, reason: String) {
         deadline?.cancel(); let generation = sessionGeneration
         deadline = Task { [weak self] in

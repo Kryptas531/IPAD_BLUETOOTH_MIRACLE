@@ -3,6 +3,22 @@ import CryptoKit
 
 private enum TVTestError: Error { case failed(String) }
 
+@MainActor
+private final class MemoryLibraryPersistence: TVLibraryPersistence {
+    var data: Data?
+    var failRead = false
+    var failWrite = false
+    var writes = 0
+    func read() throws -> Data? {
+        if failRead { throw TVTestError.failed("synthetic read failure") }
+        return data
+    }
+    func write(_ value: Data) throws {
+        if failWrite { throw TVTestError.failed("synthetic write failure") }
+        data = value; writes += 1
+    }
+}
+
 @main
 @MainActor
 struct TVTests {
@@ -21,6 +37,7 @@ struct TVTests {
     }
 
     static func main() throws {
+        try libraryChecks()
         for address in ["10.0.0.2", "172.16.0.2", "172.31.255.254", "192.168.1.5", "fd00::2", "fe80::2"] {
             try expect(TVRemoteClient.privateAddress(address), "Private TV address accepted")
         }
@@ -148,6 +165,115 @@ struct TVTests {
         try expect(rejected, "Changed TV certificate requires explicit re-pair")
         let saved = try JSONDecoder().decode(TVSavedPairing.self, from: JSONEncoder().encode(binding))
         try expect(saved == binding, "Saved TV binding serialization")
-        print("TV TESTS PASSED: \(checks) checks; wire/session/certificate checks, hardware pending.")
+        print("TV TESTS PASSED: \(checks) checks; wire/library/persistence/session/certificate checks, hardware pending.")
+    }
+
+    static func rejects(_ action: () throws -> Void, _ message: String) throws {
+        var rejected = false
+        do { try action() } catch { rejected = true }
+        try expect(rejected, message)
+    }
+
+    static func libraryChecks() throws {
+        try expect(TVFeature.requested.contains(.appLink), "APP_LINK512 requested")
+        try expect(TVRemoteWire.encoded(.appLink("https://x")) == hex("0ed2050b0a0968747470733a2f2f78"), "Independent field90 nested field1 fixture")
+        let target = try TVLaunchTarget.parse("org.xbmc.kodi", kind: .app)
+        try expect(target.wireLink == "market://launch?id=org.xbmc.kodi" && target.expectedPackage == "org.xbmc.kodi", "Package conversion uses author launch URI")
+        for bad in ["", "org..kodi", "org.1kodi", "org.kodi&id=evil", "//example.com", "example.com/path", "javascript:alert(1)", "data:text/html,x", "file:///tmp/x", "content://x", "intent://x", "https://", "https://bad host/x", "https://x/\nsecret", String(repeating: "a", count: 8193)] {
+            try rejects({ _ = try TVLaunchTarget.parse(bad, kind: .app) }, "Invalid/unsafe/oversized target rejected")
+        }
+        try rejects({ _ = try TVLaunchTarget.parse("org.xbmc.kodi", kind: .bookmark) }, "Bookmark requires URI")
+        let query = "Привет & # /😀"
+        let search = try TVLaunchTarget.youtubeSearch(query)
+        let components = URLComponents(string: search.wireLink)!
+        try expect(components.host == "www.youtube.com" && components.path == "/results", "YouTube search destination")
+        try expect(components.queryItems == [URLQueryItem(name: "search_query", value: query)] && components.fragment == nil, "Unicode search cannot inject query or fragment")
+        let unicode = try TVLaunchTarget.parse("https://example.com/привет?q=a%26b#chapter", kind: .bookmark)
+        let decoded = URLComponents(string: unicode.wireLink)!
+        try expect(decoded.path == "/привет" && decoded.queryItems?.first?.value == "a&b" && decoded.fragment == "chapter", "Unicode link preserves query and fragment")
+        try rejects({ _ = try TVLaunchTarget.youtubeSearch(" ") }, "Empty search rejected")
+        try rejects({ _ = try TVLaunchTarget.youtubeSearch(String(repeating: "a", count: 513)) }, "Oversized search rejected")
+
+        var session = TVSession()
+        let initialGeneration = session.generation
+        try expect(session.launchFrame(target, expectedGeneration: initialGeneration) == nil, "Disconnected launch blocked")
+        session.beginConnect()
+        _ = session.noteRemoteConfigure(supported: [.ping, .key], deviceInfo: nil)
+        session.markConnected()
+        try expect(session.launchFrame(target, expectedGeneration: session.generation) == nil && session.tapKey(.dpadUp) != nil, "Missing app feature blocks launch while remote works")
+        session.beginConnect()
+        _ = session.noteRemoteConfigure(supported: .requested, deviceInfo: nil)
+        try expect(session.launchFrame(target, expectedGeneration: session.generation) == nil, "Handshake cannot launch")
+        session.markConnected()
+        let connectedGeneration = session.generation
+        try expect(session.launchFrame(target, expectedGeneration: connectedGeneration) == .appLink(target.wireLink), "Negotiated connected launch")
+        try expect(session.launchFrame(target, expectedGeneration: initialGeneration) == nil, "Stale generation launch rejected")
+        session.noteCurrentApp("org.xbmc.kodi")
+        try expect(session.currentApp == "org.xbmc.kodi" && !session.textEntryAvailable, "Current app metadata does not authorize IME")
+        session.noteCurrentApp("https://example.com")
+        try expect(session.currentApp == nil, "Invalid package metadata cleared")
+        session.noteCurrentApp("org.xbmc.kodi")
+        session.beginReconnect()
+        try expect(session.currentApp == nil && !session.appLaunchAvailable && session.launchFrame(target, expectedGeneration: connectedGeneration) == nil, "Reconnect clears current app and rejects old launch without replay")
+        for (key, code) in [(TVKeycode.mediaStop, 86), (.mediaNext, 87), (.mediaPrevious, 88), (.mediaRewind, 89), (.mediaFastForward, 90)] {
+            try expect(key.rawValue == Int32(code), "Media key matches pinned Android enum")
+        }
+
+        var library = try TVLibrary.initial.validated()
+        try expect(library.items.count == 2 && library.items.allSatisfy { $0.kind == .app }, "Apps surface has initial launch tiles")
+        try expect(TVLibrary.catalog.count == 6 && Set(TVLibrary.catalog.map(\.id)).count == 6, "Editable catalog has stable distinct IDs")
+        var bookmark = TVLibraryItem(title: " Playlist ", kind: .bookmark, target: "https://example.com/list", symbol: "bookmark")
+        try library.upsert(bookmark)
+        try expect(library.items.last?.title == "Playlist", "Title trimmed on save")
+        bookmark.title = "Updated"; try library.upsert(bookmark)
+        try expect(library.items.count == 3 && library.items.last?.title == "Updated", "Edit retains identity without duplicate")
+        library.toggleFavorite(bookmark.id)
+        try expect(library.items.last?.favorite == true, "Favorite survives item edit")
+        library.move(bookmark.id, by: Int.min)
+        try expect(library.items.first?.id == bookmark.id, "Extreme negative move clamps without overflow")
+        library.move(bookmark.id, by: Int.max)
+        try expect(library.items.last?.id == bookmark.id, "Extreme positive move clamps without overflow")
+        library.recordLaunch(bookmark.id); library.recordLaunch(bookmark.id)
+        try expect(library.recentIDs == [bookmark.id], "Recent launches deduplicated")
+        library.remove(bookmark.id)
+        try expect(!library.items.contains { $0.id == bookmark.id } && library.recentIDs.isEmpty, "Deletion clears recents")
+        for index in 0..<62 {
+            let item = TVLibraryItem(title: "Item \(index)", kind: .bookmark, target: "https://example.com/\(index)")
+            try library.upsert(item); library.recordLaunch(item.id)
+        }
+        try expect(library.items.count == 64 && library.recentIDs.count == 10 && library.recentItems.first?.title == "Item 61", "Library and recent limits with newest first")
+        let before = library
+        try rejects({ try library.upsert(bookmark) }, "65th item rejected")
+        try expect(library == before, "Rejected mutation leaves library unchanged")
+        let restored = try JSONDecoder().decode(TVLibrary.self, from: JSONEncoder().encode(library)).validated()
+        try expect(restored == library, "Library JSON roundtrip preserves order/favorites/recents")
+        var unknown = library; unknown.version = 2
+        try rejects({ _ = try unknown.validated() }, "Unknown schema rejected")
+        try rejects({ _ = try TVLibrary(items: [bookmark, bookmark]).validated() }, "Duplicate IDs rejected")
+        try rejects({ _ = try TVLibrary(items: [bookmark], recentIDs: [bookmark.id, bookmark.id]).validated() }, "Duplicate recents rejected")
+        try rejects({ _ = try TVLibrary(items: [bookmark], recentIDs: [UUID()]).validated() }, "Dangling recent rejected")
+        for title in ["", "\nsecret", String(repeating: "a", count: 81)] {
+            var invalid = bookmark; invalid.title = title
+            try rejects({ try library.upsert(invalid) }, "Invalid title rejected")
+        }
+
+        let persistence = MemoryLibraryPersistence()
+        let store = TVLibraryStore(persistence: persistence)
+        try expect(store.isReady && store.library == TVLibrary.initial && persistence.writes == 0, "Missing record seeds without writing")
+        try expect(store.upsert(bookmark) && persistence.writes == 1, "Actual store saves candidate before publishing")
+        let snapshot = store.library
+        persistence.failWrite = true
+        try expect(!store.remove(bookmark.id) && store.library == snapshot && store.errorMessage != nil, "Write failure preserves published and saved library")
+        persistence.failWrite = false; persistence.failRead = true
+        store.reload()
+        try expect(!store.isReady && store.library == snapshot && !store.remove(bookmark.id), "Read failure preserves library and blocks editing")
+        persistence.failRead = false; store.reload()
+        try expect(store.isReady && store.library == snapshot, "Retry restores persisted record")
+        persistence.data = Data("corrupt".utf8)
+        let corrupt = TVLibraryStore(persistence: persistence)
+        try expect(!corrupt.isReady && corrupt.library.items.isEmpty && persistence.data == Data("corrupt".utf8), "Corrupt record not overwritten with defaults")
+        persistence.data = try JSONEncoder().encode(unknown)
+        let future = TVLibraryStore(persistence: persistence)
+        try expect(!future.isReady && persistence.writes == 1, "Unknown persisted schema not replaced")
     }
 }

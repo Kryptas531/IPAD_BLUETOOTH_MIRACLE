@@ -2,10 +2,12 @@
 import SwiftUI
 import UIKit
 
-/// SPEC 784bad0 §7.3 C: an independent TV surface, usable without a paired PC.
+/// SPEC c2ab72d §7.3 C/G: an independent TV library and remote, usable without a paired PC.
 @MainActor
 struct TVRemoteView: View {
     @ObservedObject var client: TVRemoteClient
+    @StateObject private var library = TVLibraryStore()
+    @AppStorage("BTRemote.tvSurface") private var surface = "apps"
     let acceptsTarget: () -> Bool
     @AppStorage(AppSettings.tvHostKey) private var address = ""
     @AppStorage(AppSettings.tvLabelKey) private var label = "TCL TV"
@@ -24,7 +26,14 @@ struct TVRemoteView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     status
-                    if geometry.size.width > geometry.size.height {
+                    Picker("TV surface", selection: $surface) {
+                        Text("Apps").tag("apps")
+                        Text("Bookmarks").tag("bookmarks")
+                        Text("Remote").tag("remote")
+                    }.pickerStyle(.segmented)
+                    if surface != "remote" {
+                        TVLibraryView(store: library, client: client, kind: surface == "bookmarks" ? .bookmark : .app, acceptsTarget: acceptsTarget)
+                    } else if geometry.size.width > geometry.size.height {
                         HStack(alignment: .center, spacing: 24) {
                             navigationPad.frame(maxWidth: .infinity)
                             actions.frame(maxWidth: .infinity)
@@ -45,6 +54,7 @@ struct TVRemoteView: View {
             showConnection = !client.isPaired
         }
         .onChange(of: client.sessionGeneration) { _ in clearText(); code = "" }
+        .onChange(of: surface) { _ in client.releaseAllKeys(); clearText() }
         .onChange(of: client.textEntryAvailable) { available in if !available { clearText() } }
         .onChange(of: client.textFieldCounter) { field in if field != textField { clearText() } }
         .onChange(of: scenePhase) { phase in
@@ -70,6 +80,9 @@ struct TVRemoteView: View {
         VStack(spacing: 4) {
             Text("TV · \(client.deviceLabel)").font(.headline)
             Text(connectionLabel).font(.subheadline)
+            if let package = client.currentApp {
+                Text("On TV: \(friendlyName(package))").font(.subheadline)
+            }
             Text(client.powerPending ? "Power request pending — waiting for the TV" : powerLabel)
                 .font(.caption).foregroundColor(.secondary)
             if let error = client.lastError {
@@ -134,6 +147,15 @@ struct TVRemoteView: View {
             HStack(spacing: 10) {
                 action("Mute", symbol: "speaker.slash", code: .volumeMute, allowed: allowed)
                 action("Play / Pause", symbol: "playpause", code: .mediaPlayPause, allowed: allowed)
+            }
+            HStack(spacing: 10) {
+                action("Previous", symbol: "backward.end", code: .mediaPrevious, allowed: allowed)
+                action("Next", symbol: "forward.end", code: .mediaNext, allowed: allowed)
+            }
+            HStack(spacing: 10) {
+                action("Rewind", symbol: "backward", code: .mediaRewind, allowed: allowed)
+                action("Stop", symbol: "stop", code: .mediaStop, allowed: allowed)
+                action("Fast forward", symbol: "forward", code: .mediaFastForward, allowed: allowed)
             }
             Button {
                 if allowed() { client.requestPowerToggle() }

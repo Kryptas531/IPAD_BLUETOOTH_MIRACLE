@@ -535,6 +535,11 @@ public enum TVKeycode: Int32, Sendable, CaseIterable {
     case volumeDown = 25
     case power = 26
     case mediaPlayPause = 85
+    case mediaStop = 86
+    case mediaNext = 87
+    case mediaPrevious = 88
+    case mediaRewind = 89
+    case mediaFastForward = 90
     case volumeMute = 164
 }
 
@@ -546,8 +551,7 @@ public enum TVKeyDirection: Int32, Sendable {
     case short = 3
 }
 
-/// Feature bits from `remote.py` `class Feature(IntFlag)`. `appLink` is listed for
-/// completeness; the TV target does not launch apps, so it is not requested.
+/// Feature bits from the pinned `remote.py` implementation (SPEC §7.3 B/G).
 public struct TVFeature: OptionSet, Sendable {
     public let rawValue: UInt32
 
@@ -565,7 +569,7 @@ public struct TVFeature: OptionSet, Sendable {
     public static let appLink = TVFeature(rawValue: 1 << 9)
 
     /// What the iPad asks the TV for. Text is only possible with a negotiated IME.
-    public static let requested: TVFeature = [.ping, .key, .ime, .power, .volume]
+    public static let requested: TVFeature = [.ping, .key, .ime, .power, .volume, .appLink]
 }
 
 public struct TVDeviceInfo: Equatable, Sendable {
@@ -609,6 +613,7 @@ public struct TVDeviceInfo: Equatable, Sendable {
 
 /// What the iPad sends on the remote port. Each case is exactly one `RemoteMessage` field.
 public enum TVOutgoingRemote: Equatable, Sendable {
+    case appLink(String)
     case configure(supported: TVFeature, deviceInfo: TVDeviceInfo)
     case setActive(TVFeature)
     case pingResponse(val1: Int32)
@@ -639,6 +644,8 @@ public enum TVRemoteWire {
 
     public static func fields(for outgoing: TVOutgoingRemote) -> [TVWireField] {
         switch outgoing {
+        case .appLink(let target):
+            return [TVProtobuf.messageField(90, [TVProtobuf.stringField(1, target)])]
         case .configure(let supported, let deviceInfo):
             return [
                 TVProtobuf.messageField(1, [
@@ -765,6 +772,7 @@ public struct TVSession: Sendable {
     public private(set) var fieldSupported = false
     public private(set) var heldKeys: Set<TVKeycode> = []
     public private(set) var deviceInfo: TVDeviceInfo?
+    public private(set) var currentApp: String?
     public private(set) var lastFailure: TVWireFailure?
 
     public init(requestedFeatures: TVFeature = .requested) { self.requestedFeatures = requestedFeatures }
@@ -772,6 +780,18 @@ public struct TVSession: Sendable {
     public var textEntryAvailable: Bool {
         connection == .connected && activeFeatures.contains(.ime) && fieldSupported
             && imeCounter != nil && activeFieldCounter != nil && fieldCounter == activeFieldCounter
+    }
+    public var appLaunchAvailable: Bool { connection == .connected && activeFeatures.contains(.appLink) }
+    mutating func launchFrame(_ target: TVLaunchTarget, expectedGeneration: UInt64) -> TVOutgoingRemote? {
+        guard belongs(to: expectedGeneration), appLaunchAvailable else { return nil }
+        return .appLink(target.wireLink)
+    }
+    public mutating func noteCurrentApp(_ package: String?) {
+        guard connection == .connected || connection == .connecting || connection == .reconnecting,
+              let package, package.utf8.count <= 255,
+              let parsed = try? TVLaunchTarget.parse(package, kind: .app),
+              parsed.expectedPackage == package else { currentApp = nil; return }
+        currentApp = package
     }
     public func belongs(to generation: UInt64) -> Bool { self.generation == generation }
 
@@ -788,6 +808,7 @@ public struct TVSession: Sendable {
         fieldSupported = false
         heldKeys = []
         deviceInfo = nil
+        currentApp = nil
         lastFailure = nil
     }
     public mutating func beginPairing() { reset(.pairing) }

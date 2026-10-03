@@ -40,11 +40,13 @@ jobs:
               -o .build/gamepad-tests
           .build/gamepad-tests
 
-      - name: Test TV protocol, sessions and certificate (SPEC 784bad0 §7.3)
+      - name: Test TV protocol, library, sessions and certificate (SPEC c2ab72d §7.3)
         run: |
           set -o pipefail
           swiftc -swift-version 6 \
               BTRemote/TVWire.swift \
+              BTRemote/TVLibrary.swift \
+              BTRemote/TVLibraryStore.swift \
               BTRemote/TVIdentity.swift \
               BTRemote/TVRemoteClient.swift \
               BTRemote/RemoteTargetSession.swift \
