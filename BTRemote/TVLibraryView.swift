@@ -188,7 +188,7 @@ private struct TVLibraryEditor: View {
                             _ = try TVLaunchTarget.parse(item.target, kind: item.kind)
                             if save(item) { dismiss() }
                             else { error = "Could not save. Use a nonempty title of at most 80 characters and a valid target; unlock the iPad and retry." }
-                        } catch { error = "Enter a valid app package or URL. File and script links are not supported." }
+                        } catch { self.error = "Enter a valid app package or URL. File and script links are not supported." }
                     }
                 }
             }
