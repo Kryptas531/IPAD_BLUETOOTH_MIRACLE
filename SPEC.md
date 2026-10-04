@@ -1048,10 +1048,48 @@ powered-on control alone does not make this TV product ready.
   separate. The owner explicitly requests code/build delivery while testing the base
   remote; this does not establish physical compatibility or wake readiness.
 
+### H. Owner-approved laptop reference and local TV MCP
+On 2026-10-04 the owner requests working laptop control first, exposed as a local MCP
+server, then using the verified exchange to repair the direct iPad implementation.
+This optional laptop tool is a reference/control surface, not a required iPad relay or
+a change to the Windows BLE/foreground-helper contract. It must not modify PC input.
+- Provide a Windows-compatible Python companion under `companion/TVMCP`, using the
+  canonical `androidtvremote2` reference pinned to revision
+  `b09f21432ba33e42536215a8f41641d801cf6a2c` (Apache-2.0) and the official MCP Python
+  SDK (MIT). These dependencies are justified by real Remote v2 interoperability and
+  standard MCP transport; they do not become iPad dependencies. Preserve project AGPL.
+- Expose MCP over local stdio only, with explicit manual private numeric TV address.
+  No LAN listener, cloud relay, ADB, custom TV APK or discovery requirement. Pairing
+  starts only on an explicit action, accepts the six hexadecimal digits displayed on
+  the TV, and uses credentials separate from the iPad and Windows helper.
+- Persist laptop private-key/client-certificate material and pairing-bound TV pin
+  outside Git, encrypted for the current Windows user with DPAPI. Any transient PEM
+  files required by the reference library have restricted user access and are removed
+  on shutdown. Never expose keys, PIN, typed text or private content URLs in logs.
+  Bind the server certificate to successful PIN pairing; reject a changed pin before
+  user commands. Forget/re-pair is explicit and does not erase iPad credentials.
+- Provide connection/status diagnostics that identify pairing, TLS, Remote configure,
+  active/start and command failure stages; report observed power separately. Bound
+  connection/command timeouts, serialize commands and never replay commands on retry.
+- MCP tools cover pair/start and pair/finish, connect/disconnect/status, supported
+  remote/media keys, opening an app or content link, and local app/bookmark management.
+  An app catalog is user-configured, not installed-app discovery. Opening a movie
+  requires a concrete deep link supported by its TV application and any normal app
+  subscription/login. Sending an open command is not proof that playback started.
+  No automatic purchases, subscription/login changes or destructive TV settings.
+- First acceptance: actual MCP initialize/tools-list/tool-call, local validation and
+  bounded failure checks, then laptop PIN pairing to the owner's TCL, reconnection
+  using persisted credentials, and owner-observed app/content launch. Record actual
+  negotiated features and sanitized protocol-stage evidence to compare with Swift.
+  Static checks or a listening TCP port cannot replace these gates. iPad physical
+  pairing/control and wake remain pending until tested on the iPad independently.
+
 ## 8. Active milestone
-**Current bounded TV task (§7.3 G):** deliver app launching, bookmarks and a useful TV
-library while the owner tests the base IPA. Base code/build readiness is recorded above;
-physical pairing → control → standby → iPad wake (including 30 minutes) remains pending.
+**Current bounded TV task (§7.3 H):** establish laptop control and a local TV MCP on
+the real TCL, then repair the direct iPad connection using the verified reference.
+The Apps/Bookmarks expansion (§7.3 G) and Pair crash fix are built; iPad now reports
+a connection timeout after code entry, including with VPN disabled. Physical control,
+standby and iPad wake (including 30 minutes) remain pending.
 Existing PC acceptance also remains outstanding as recorded below.
 
 Per the reconciled roadmap (2026-09-20/21, renumbered for §7.1/§7.2):
