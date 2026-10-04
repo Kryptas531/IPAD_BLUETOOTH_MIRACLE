@@ -48,6 +48,7 @@ struct TVTests {
         }
         #endif
         try libraryChecks()
+        try capturedTCLHandshakeChecks()
         for address in ["10.0.0.2", "172.16.0.2", "172.31.255.254", "192.168.1.5", "fd00::2", "fe80::2"] {
             try expect(TVRemoteClient.privateAddress(address), "Private TV address accepted")
         }
@@ -182,6 +183,36 @@ struct TVTests {
         var rejected = false
         do { try action() } catch { rejected = true }
         try expect(rejected, message)
+    }
+
+    static func capturedTCLHandshakeChecks() throws {
+        // Captured from the owner's TCL on 2026-10-04 after successful laptop PIN
+        // pairing. No credentials/PIN/input/content are included in these messages.
+        let configure = hex("0a5608ff04124f0a0c536d6172742054562050726f120354434c1801220231322a24636f6d2e676f6f676c652e616e64726f69642e74762e72656d6f74652e73657276696365320e372e30302e3935363331373631351801")
+        let activation = hex("1200")
+        let started = hex("c202020801")
+        var session = TVSession()
+        session.beginConnect()
+        guard case .configure(let features, let device) = TVRemoteWire.decode(configure),
+              let reply = session.noteRemoteConfigure(supported: features, deviceInfo: device) else {
+            throw TVTestError.failed("Captured TCL configure cannot negotiate")
+        }
+        try expect(features.rawValue == 639 && device?.vendor == "TCL", "Actual TCL configure features and identity decoded")
+        // Independent generated-protobuf oracle from pinned androidtvremote2.
+        try expect(TVRemoteWire.encoded(reply) == hex("1e0a1c08e704121718012201312a0961747672656d6f74653205312e302e30"), "Configure reply matches successful reference client")
+        try expect(TVRemoteWire.decode(activation) == .setActive(0), "Actual empty TCL activation request is not discarded")
+        try expect(TVRemoteWire.decode(hex("12020800")) == .setActive(0), "Explicit zero activation remains compatible")
+        try expect(TVRemoteWire.decode(hex("120308e704")) == .setActive(615), "Nonzero activation remains compatible")
+        guard case .setActive = TVRemoteWire.decode(activation), let activeReply = session.noteRemoteSetActive() else {
+            throw TVTestError.failed("TCL activation has no response, preventing RemoteStart")
+        }
+        try expect(TVRemoteWire.encoded(activeReply) == hex("05120308e704"), "Empty activation receives the reference negotiated-feature reply")
+        try expect(!session.appLaunchAvailable && session.tapKey(.home) == nil, "Controls remain gated until captured RemoteStart")
+        guard case .start(let isOn) = TVRemoteWire.decode(started) else {
+            throw TVTestError.failed("Captured TCL RemoteStart not decoded")
+        }
+        session.markConnected(); session.noteRemoteStart(started: isOn)
+        try expect(session.connection == .connected && session.power == .on && session.appLaunchAvailable, "Captured TCL handshake completes with observed power and app capability")
     }
 
     static func libraryChecks() throws {

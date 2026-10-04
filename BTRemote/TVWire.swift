@@ -706,8 +706,10 @@ public enum TVRemoteWire {
             }
             return .configure(supported: supported, deviceInfo: deviceInfo)
         }
-        if let setActive = TVProtobuf.nested(fields, 2), let active = TVProtobuf.varint(setActive, 1) {
-            return .setActive(active)
+        if let setActive = TVProtobuf.nested(fields, 2) {
+            // Proto3 omits the scalar when active == 0. TCL sends this empty
+            // activation request (12 00); it still requires our negotiated reply.
+            return .setActive(TVProtobuf.varint(setActive, 1) ?? 0)
         }
         if let ping = TVProtobuf.nested(fields, 8) {
             let val1 = TVProtobuf.varint(ping, 1) ?? 0
