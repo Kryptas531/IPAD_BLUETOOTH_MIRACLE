@@ -1,0 +1,15 @@
+# Python build/venv artifacts (TV MCP laptop reference)
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+tv-mcp-venv/
+
+# Never commit any local credential/vault or PEM material, anywhere under here
+*.bin
+identity.dpapi
+*.pem
+*.key
+*.tmp-*
