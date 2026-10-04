@@ -324,7 +324,6 @@ class TVController:
                 if pin is None:
                     raise RuntimeError("no peer certificate observed on the pairing transport")
             except Exception as exc:
-                phase = _connect_phase(remote)
                 if remote is not None:
                     try:
                         remote.disconnect()
@@ -480,6 +479,7 @@ class TVController:
                 await asyncio.wait_for(remote.async_connect(), self.connect_timeout)
                 observed_pin = _peer_cert_sha256(remote._transport)
             except Exception as exc:
+                phase = _connect_phase(remote)
                 if remote is not None:
                     try:
                         remote.disconnect()
