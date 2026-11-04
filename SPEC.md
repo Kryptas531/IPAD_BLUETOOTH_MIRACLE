@@ -1409,3 +1409,42 @@ and the active owner task govern them; legacy runtime files do not expand scope 
   implemented in `ac87c61` + `dbe36ab` — physical verification pending), the remaining §7.2 item
   (the §9 item 10 hardware checks; the CI build of the Swift client is done — runs
   `36372951698` / `36373205510`).
+
+
+## 13. Ace Combat FLIGHT controller (2026-11-04 contract)
+The owner requests gyro roll/pitch and simultaneous gamepad buttons for Ace Combat,
+without access to the ASUS computer. Add a nested GAME → FLIGHT source, leaving
+RACING, TV, keyboard/mouse and the protected BLE descriptor/transport unchanged.
+iPad CoreBluetooth is not a promise of a native Bluetooth Xbox/XInput device.
+FLIGHT explicitly uses local IPv4 UDP to a Windows receiver creating a virtual
+Xbox 360 controller with the existing open-source vgamepad/ViGEmBus path.
+ViGEmBus is archived/EOL; disclose this install prerequisite and do not auto-install
+a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
+
+- Reuse the single CoreMotion pipeline and fixed recentered baseline: screen-normal
+  clockwise roll → LX positive; tilt about the landscape horizontal device axis
+  → LY pitch, with landscape-left/right correction. Deadzone 2°, full roll 32°,
+  full pitch 25°, exponent 1.4. Reject nonfinite samples and stop/neutralize on motion
+  error. RECENTER immediately clears both flight axes while held buttons/triggers
+  and camera drag remain held. Free-surface drag maps RX/RY; release clears only it.
+- Expose A/B/X/Y, LB/RB, START/BACK, LT/RT and RECENTER as momentary controls;
+  no mouse or BLE gamepad reports in FLIGHT. Entering/exiting modes, app inactivity,
+  view exit, transport failure and receiver silence must not latch controls.
+- Settings: private IPv4 host and a 32-byte hex pairing key generated locally by
+  the receiver, entered in a SecureField, never logged/committed. Fixed UDP 26761.
+  Use keyed HMAC-SHA256 over fixed binary packets (magic IGP1, random 16-byte
+  session ID, big-endian uint64 monotonically increasing sequence, uint16 button
+  bitmap, 4 signed axis bytes [-127,127], 2 unsigned triggers, then 32-byte MAC).
+  Full packet length 68 bytes; bits 0..7 map A,B,X,Y,LB,RB,BACK,START.
+- Send newest full state at 50 Hz with at most one outstanding send (no queue of
+  historical input). Receiver authenticates before parsing/claiming a session,
+  rejects malformed/out-of-order/replayed packets, owns one peer/session until
+  300 ms silence, neutralizes on that timeout and on shutdown. Reconnect starts
+  neutral; retired sessions cannot take over. No wildcard/public bind by default.
+- Permit FLIGHT without Bluetooth; show local sender status, not a claim of
+  receiver/game acknowledgement. Keep the existing local-network permission key.
+- Add deterministic tests against production gyro arithmetic and packet encoding;
+  receiver tests must exercise authentication, sequencing, field mapping, loss/
+  timeout/reconnect and independent releases with an injectable virtual backend.
+  Linux tests do not prove iOS compilation, driver installation or hardware feel.
+  Preserve unsigned IPA CI; add feature-branch PR build and receiver tests.
