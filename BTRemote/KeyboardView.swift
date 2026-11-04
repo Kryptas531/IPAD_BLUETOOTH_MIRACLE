@@ -81,11 +81,22 @@ struct KeyboardView: View {
     @FocusState private var focused: Bool
     @StateObject private var typist = KeyTypist()
 
+    private var flightSelected: Bool { gameInputMode == .flight }
+
     var body: some View {
-        if hid.isActive || developerMode {
+        if hid.isActive || developerMode || flightSelected {
             editor
         } else {
-            NotConnectedView(icon: "keyboard", goToSetup: goToSetup)
+            VStack {
+                NotConnectedView(icon: "keyboard", goToSetup: goToSetup)
+                #if os(iOS)
+                Button("Open FLIGHT over Wi-Fi") {
+                    gameInputMode = .flight
+                    padMode = .game
+                }.buttonStyle(.borderedProminent)
+                Button("FLIGHT settings", action: openSettings)
+                #endif
+            }
         }
     }
 
@@ -93,11 +104,11 @@ struct KeyboardView: View {
         GeometryReader { geo in
             if padMode == .control {
                 controlSurface(landscape: geo.size.width > geo.size.height)
-            } else if geo.size.width > geo.size.height {
+            } else if geo.size.width > geo.size.height || (padMode == .game && gameInputMode == .flight) {
             if padMode == .game {
                 ZStack(alignment: .top) {
                     #if os(iOS)
-                        if gameInputMode == .racing {
+                        if gameInputMode == .racing || gameInputMode == .flight {
                             // SPEC §5.2 I: the free racing surface uses raw UIKit touches.
                             // It is not the §7.1 CONTROL pad and not the relative-mouse
                             // path, and it covers the whole GAME surface behind the racing
@@ -132,7 +143,7 @@ struct KeyboardView: View {
                             Spacer()
                             bottomStrip
                             #if os(iOS)
-                                if gameInputMode == .racing {
+                                if gameInputMode == .racing || gameInputMode == .flight {
                                     // SPEC §5.2 J: brake/gas and three ability buttons.
                                     racingControls
                                 }
@@ -157,10 +168,11 @@ struct KeyboardView: View {
                                         Text(L10n.Input.gyro).tag(GameInputMode.gyro)
                                         Text(L10n.Input.hybrid).tag(GameInputMode.hybrid)
                                         Text(L10n.Input.racing).tag(GameInputMode.racing)
+                                        Text("FLIGHT").tag(GameInputMode.flight)
                                     }
                                     .pickerStyle(.segmented)
                                     .labelsHidden()
-                                    .frame(maxWidth: 260)
+                                    .frame(maxWidth: 340)
                                     Text(L10n.Settings.gyroSensitivity).font(.caption2)
                                     Slider(value: $gyroSensitivity, in: AppSettings.gyroSensitivityRange)
                                         .frame(maxWidth: 180)
@@ -214,7 +226,7 @@ struct KeyboardView: View {
                             .padding(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             #if os(iOS)
-                                if gameInputMode == .racing {
+                                if gameInputMode == .racing || gameInputMode == .flight {
                                     // SPEC §5.2 J: brake/gas, three ability buttons and RECENTER.
                                     racingControls
                                 }
@@ -289,6 +301,7 @@ struct KeyboardView: View {
             // SPEC §7.3 C: the link-gone path clears local/pending state only; the next
             // session starts neutral and never replays old presses, text or repeats.
             .onChange(of: lowEnergy.connectedCentrals) { centrals in
+                guard gameInputMode != .flight else { return }
                 if centrals.isEmpty {
                     releasePCInput()
                 } else {
@@ -303,6 +316,7 @@ struct KeyboardView: View {
             // host that has no gamepad. A host that (re)subscribes while RACING is selected
             // restarts the same single motion pipeline and re-baselines it.
             .onChange(of: lowEnergy.gamepadSubscribedCentrals) { centrals in
+                guard gameInputMode != .flight else { return }
                 if centrals.isEmpty {
                     releasePCInput()
                 } else if gameInputMode == .racing {
@@ -310,6 +324,7 @@ struct KeyboardView: View {
                 }
             }
             .onChange(of: lowEnergy.isHIDServiceAdded) { added in
+                guard gameInputMode != .flight else { return }
                 if added {
                     configureGyro()
                 } else {
@@ -537,9 +552,8 @@ struct KeyboardView: View {
             // state without sending it, so without this a held brake/gas, an ability button or
             // a deflected stick would stay latched on Windows. RACING -> touch and leaving GAME
             // are covered by `stop()`, which neutralizes as well.
-            if gyro.mode == .racing, gameInputMode != .racing {
-                gyro.neutralizeRacing()
-            }
+            // Neutralize the old destination before changing routing.
+            gyro.stop()
             gyro.mode = gameInputMode
             guard padMode == .game else {
                 gyro.stop()
@@ -588,7 +602,10 @@ struct KeyboardView: View {
         /// NOT part of the auto-hiding GAME chrome: it stays visible and tappable on the
         /// racing surface for the whole session, and every target is 44 pt high (the same
         /// height as the §5/§7.1 keyboard keys) so it stays usable in landscape.
-        private var racingControls: some View {
+        @ViewBuilder private var racingControls: some View {
+            if gameInputMode == .flight {
+                flightControls
+            } else {
             HStack(spacing: 6) {
                 racingTrigger(L10n.Input.brake, .brake)
                 racingTrigger(L10n.Input.gas, .gas)
@@ -606,6 +623,36 @@ struct KeyboardView: View {
                 .buttonStyle(.plain)
             }
             .frame(height: 44)
+            }
+        }
+
+        private var flightControls: some View {
+            VStack(spacing: 4) {
+                FlightStatusView(sender: gyro.flightSender)
+                HStack(spacing: 4) {
+                    racingTrigger("LT", .brake)
+                    racingTrigger("RT", .gas)
+                    flightButton("A", 1)
+                    flightButton("B", 2)
+                    flightButton("X", 4)
+                    flightButton("Y", 8)
+                }.frame(height: 44)
+                HStack(spacing: 4) {
+                    flightButton("LB", 16)
+                    flightButton("RB", 32)
+                    flightButton("BACK", 64)
+                    flightButton("START", 128)
+                    Button("RECENTER") { gyro.recenter() }
+                        .buttonStyle(.bordered)
+                }.frame(height: 44)
+            }
+        }
+
+        private func flightButton(_ label: String, _ bit: UInt16) -> some View {
+            HoldButton(onPress: { gyro.setFlightButton(bit, pressed: true) },
+                       onRelease: { gyro.setFlightButton(bit, pressed: false) },
+                       background: { RoundedRectangle(cornerRadius: 6).fill(groupFill) },
+                       label: { Text(label).font(.footnote) })
         }
 
         private func racingTrigger(_ label: LocalizedStringKey, _ trigger: GamepadTrigger) -> some View {

@@ -1,8 +1,13 @@
 import Foundation
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
+#if canImport(SwiftUI)
 import SwiftUI
+#endif
 #if os(iOS)
     import CoreMotion
+    import UIKit
 #endif
 
 /// GAME input source (SPEC §5.1 A/I). Touch stays the default; gyro, hybrid and
@@ -15,6 +20,7 @@ enum GameInputMode: String {
     case gyro
     case hybrid
     case racing
+    case flight
 }
 
 /// SPEC §5.2 H/I: compile-time tuning defaults for the first playable racing build
@@ -217,6 +223,23 @@ struct RacingSourceState: Sendable {
         private var hid: HIDInput = .unavailable
         private let manager = CMMotionManager()
         private var previous: RacingQuaternion?
+        let flightSender = FlightSender()
+        private var flight = FlightState.zero
+        private var flightOrigin: CGPoint?
+        private var motionGeneration = UUID()
+        private var flightLandscapeRight = false
+
+        func setFlightButton(_ bit: UInt16, pressed: Bool) {
+            guard mode == .flight else { return }
+            flight.setButton(bit, pressed: pressed)
+            flightSender.update(flight)
+        }
+
+        private func neutralizeFlight() {
+            flight = .zero
+            flightOrigin = nil
+            flightSender.update(.zero)
+        }
 
         /// Fractional mouse counts left over from the previous sample. A 10 ms
         /// sample at the default 180 counts/radian needs ~0.32 deg of rotation for
@@ -233,9 +256,14 @@ struct RacingSourceState: Sendable {
             // buttons and the floating drag must keep working even when device motion
             // is unavailable; only steering needs motion, and steering never falls
             // back to keycodes or to the relative-mouse path.
+            stop()
             self.hid = hid
+            if mode == .flight {
+                flightLandscapeRight = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.interfaceOrientation == .landscapeRight
+                flightSender.start()
+            }
             guard manager.isDeviceMotionAvailable else {
-                stop()
+                isAvailable = false
                 return
             }
             previous = nil
@@ -244,15 +272,23 @@ struct RacingSourceState: Sendable {
             // SPEC §5.2 E: a fresh racing session starts from one neutral state.
             racing = RacingSourceState()
             isRunning = true
-            manager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] motion, _ in
-                guard let motion = motion else { return }
+            let generation = motionGeneration
+            manager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] motion, error in
+                guard let motion = motion, error == nil else {
+                    Task { @MainActor in
+                        guard let self, self.motionGeneration == generation else { return }
+                        self.stop()
+                    }
+                    return
+                }
                 let attitude = motion.attitude.quaternion
                 let sample = RacingQuaternion(
                     w: Double(attitude.w), x: Double(attitude.x),
                     y: Double(attitude.y), z: Double(attitude.z)
                 )
                 Task { @MainActor in
-                    self?.handle(sample)
+                    guard let self, self.motionGeneration == generation else { return }
+                    self.handle(sample)
                 }
             }
             isAvailable = true
@@ -263,7 +299,10 @@ struct RacingSourceState: Sendable {
             // SPEC §5.2 L: stop the motion source first, so no sample that is still in
             // flight can write a steering axis after the neutralizing report was sent.
             isRunning = false
+            motionGeneration = UUID()
             manager.stopDeviceMotionUpdates()
+            neutralizeFlight()
+            flightSender.stop()
             previous = nil
             carryX = 0
             carryY = 0
@@ -288,6 +327,11 @@ struct RacingSourceState: Sendable {
             // the next sample measures from the pose that was just recorded), and only
             // LX is written: RX, both pedals and the held ability buttons keep whatever
             // values the racing sources still hold.
+            if mode == .flight {
+                flight.recenter()
+                flightSender.update(flight)
+                return
+            }
             guard mode == .racing else { return }
             let held = racing.gamepad
             racing.recenterSteering()
@@ -309,11 +353,22 @@ struct RacingSourceState: Sendable {
         /// SPEC §5.2 I: a touch that begins on the free racing surface owns its own
         /// origin; only the first free touch drives right-stick X.
         func beginRacingTouch(at point: CGPoint) {
+            if mode == .flight {
+                if flightOrigin == nil { flightOrigin = point }
+                return
+            }
             racing.beginTouch(at: point)
         }
 
         /// Displacement from that touch's own origin, mapped to signed right-stick X.
         func moveRacingTouch(to point: CGPoint) {
+            if mode == .flight {
+                guard let origin = flightOrigin else { return }
+                flight.rx = RacingMapper.axis(fromDrag: point.x - origin.x)
+                flight.ry = RacingMapper.axis(fromDrag: origin.y - point.y)
+                flightSender.update(flight)
+                return
+            }
             let held = racing.gamepad
             racing.moveTouch(to: point)
             guard racing.gamepad != held else { return }
@@ -323,6 +378,13 @@ struct RacingSourceState: Sendable {
         /// SPEC §5.2 I/L: `touchesEnded`/`touchesCancelled` resets RX only; every other
         /// field keeps whatever else is still held.
         func endRacingTouch() {
+            if mode == .flight {
+                flightOrigin = nil
+                flight.rx = 0
+                flight.ry = 0
+                flightSender.update(flight)
+                return
+            }
             let held = racing.gamepad
             racing.endTouch()
             guard racing.gamepad != held else { return }
@@ -342,6 +404,12 @@ struct RacingSourceState: Sendable {
         /// SPEC §5.2 J: gas is RT, brake is LT — two separate fields of the same
         /// report, so both can be present at once and each releases independently.
         func setRacingTrigger(_ trigger: GamepadTrigger, pressed: Bool) {
+            if mode == .flight {
+                if trigger == .gas { flight.rt = pressed ? 255 : 0 }
+                else { flight.lt = pressed ? 255 : 0 }
+                flightSender.update(flight)
+                return
+            }
             let held = racing.gamepad
             racing.setTrigger(trigger, pressed: pressed)
             guard racing.gamepad != held else { return }
@@ -359,10 +427,23 @@ struct RacingSourceState: Sendable {
         }
 
         private func handle(_ current: RacingQuaternion) {
+            guard isRunning else { return }
+            guard [current.w, current.x, current.y, current.z].allSatisfy({ $0.isFinite }) else {
+                stop()
+                return
+            }
             guard let p = previous else {
                 previous = current
                 carryX = 0
                 carryY = 0
+                return
+            }
+            if mode == .flight {
+                let axes = FlightMapper.axes(from: p, to: current,
+                                            landscapeRight: flightLandscapeRight)
+                flight.lx = axes.lx
+                flight.ly = axes.ly
+                flightSender.update(flight)
                 return
             }
             if mode == .racing {

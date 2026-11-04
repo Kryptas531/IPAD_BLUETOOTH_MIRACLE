@@ -11,6 +11,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  pull_request:
+    branches: [main, feat/tv-wifi-remote]
 
 jobs:
   build-unsigned:
@@ -63,6 +65,17 @@ jobs:
           tls_fixture_pid=$!
           trap 'kill "$tls_fixture_pid" 2>/dev/null || true' EXIT
           TV_TLS_PROBE_PORT=46466 .build/tv-tests
+
+      - name: Flight mapping and cross-language wire tests
+        run: |
+          swiftc -swift-version 6 \
+              BTRemote/LowEnergy/HIDReports.swift \
+              BTRemote/GyroAim.swift \
+              BTRemote/FlightGamepad.swift \
+              BTRemoteTests/FlightTests.swift \
+              -o .build/flight-tests
+          .build/flight-tests
+          python3 -m unittest discover -s companion/FlightReceiver -p 'test_*.py' -v
 
       - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
         run: |

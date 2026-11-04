@@ -11,6 +11,15 @@ concerned, so Windows needs no companion software for basic control.
 - Windows controls (Ctrl / Win / Alt / Shift, extended keys) and a control DECK (Windows shortcuts,
   navigation, F1–F12)
 
+## Ace Combat FLIGHT controller
+
+The new nested **PC → GAME → FLIGHT** path maps recentered gyro to analog roll/pitch,
+free touch to camera, and simultaneous Xbox buttons/triggers over authenticated **LAN UDP**
+to a Windows virtual Xbox 360 receiver. It is not native Bluetooth XInput. Source and
+receiver tests are in this branch; iOS build and physical acceptance are separate gates.
+See [Windows receiver / Steam setup](companion/FlightReceiver/README.md) and
+[dated verification status](reports/ipad-gyro-controller-status-20261104.md).
+
 ## Origin
 The codebase started from imported code from the open-source project
 [jqssun/darwin-bt-remote](https://github.com/jqssun/darwin-bt-remote) — imported at upstream commit
@@ -45,7 +54,8 @@ Windows → git push → GitHub Actions (macOS runner: xcodegen + xcodebuild, `C
   and CI-green (run `35652625241`), but physical acceptance (Win tap → Start; hold Alt +
   press Tab; ALT+TAB / WIN+L keycaps; lock-screen flow; GAME metrics) is **not yet
   verified** — needs the user's iPad + Windows session (see `SPEC.md` §9/§10)
-- TOUCH mode (absolute digitizer), gyro aim and native dictation: not implemented
+- TOUCH mode (absolute digitizer) and native dictation are not implemented. Gyro mouse
+  aim and RACING are implemented in source; hardware acceptance is still required.
 - Compilation of any newer Swift edits is unverified without a new CI run (no Xcode on the dev
   machine); some imported upstream features (iPhone remote, macOS Bluetooth Classic backend, TV
   remote) are out of scope for this product

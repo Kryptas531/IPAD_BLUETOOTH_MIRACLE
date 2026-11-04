@@ -62,6 +62,7 @@ struct SettingsView: View {
                 // shortcuts. iOS only; the helper never carries HID input, so the existing
                 // sections above and the fields below keep working unchanged.
                 WindowsForegroundSettingsView()
+                FlightSettingsView()
             #endif
             if developerMode, hid.isActive { batterySection }
             resetSection

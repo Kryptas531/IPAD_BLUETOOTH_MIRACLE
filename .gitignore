@@ -36,3 +36,8 @@ gha-creds-*.json
 *.zip
 rawprobe/
 SideStore-0.7.0-alpha/
+
+# Python receiver test caches / private pairing keys
+__pycache__/
+*.pyc
+flight-key.txt
