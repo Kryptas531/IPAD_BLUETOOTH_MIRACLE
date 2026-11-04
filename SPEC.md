@@ -1448,3 +1448,21 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
   timeout/reconnect and independent releases with an injectable virtual backend.
   Linux tests do not prove iOS compilation, driver installation or hardware feel.
   Preserve unsigned IPA CI; add feature-branch PR build and receiver tests.
+
+### 13.1 Explicit FLIGHT recovery and orientation
+- Keep a discoverable **RECONNECT / RE-ARM** action beside FLIGHT status. The
+  action clears all input and the gyro baseline, creates a fresh random session,
+  and sends authenticated neutral packets for at least 600 ms at 50 Hz before
+  new input. This spans the old owner's 300 ms watchdog even when reconnecting
+  while it is still active. Previously held buttons/triggers and camera gestures
+  require release and a new press/drag; never silently replay held input.
+- After a link timeout, a user may re-arm while the device remains deflected;
+  its current pose becomes the new baseline. No receiver acknowledgement is
+  implied. Retired-session packets remain rejected.
+- Determine orientation from the FLIGHT view's own window scene, not the first
+  connected scene. Require landscape for gyro axes; neutralize gyro axes in
+  portrait/unknown orientation and rebaseline on every orientation change.
+  Buttons/triggers remain available without gyro. Show this limitation in UI.
+- Regression uses real UDP sockets: continuously nonzero old-session packets
+  after timeout remain neutral, explicit fresh-session neutral handshake succeeds,
+  old packets are rejected, then new-session input is accepted.
