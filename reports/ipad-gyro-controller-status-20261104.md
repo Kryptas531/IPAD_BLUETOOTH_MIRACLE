@@ -50,8 +50,12 @@ Branch: `feat/ace-combat-controller` in
 - Actual virtual Xbox backend calls **vgamepad / ViGEmBus**. ViGEmBus is archived/EOL;
   driver installation is a separate owner choice on the available gaming PC.
   No driver or PC installation was performed here.
-- Receiver requires a neutral packet after timeout/new session; release all
-  controls/recenter before resuming. Retired sessions cannot retake ownership.
+- Receiver requires a neutral packet after timeout/new session. Use the visible
+  RECONNECT / RE-ARM action to clear sources, rebaseline the current pose and
+  create a fresh session with 600 ms of authenticated neutral packets. Previously
+  held buttons/triggers/camera require release and a new gesture. Retired sessions
+  cannot retake ownership. Scene-local orientation changes rebaseline gyro;
+  portrait/unknown orientation keeps gyro axes neutral.
 - Existing unsigned macOS IPA workflow now also runs the flight tests and is
   eligible for pull requests into main or the current TV branch.
 
@@ -60,17 +64,22 @@ Branch: `feat/ace-combat-controller` in
 Official Swift **6.2.1** Linux toolchain installed user-locally under
 `/home/agent/.cache/ipad-gyro-swift` (no global configuration changes).
 
-1. **32 production Swift checks PASS**: actual `FlightMapper`,
+1. **105 production Swift checks PASS**: actual `FlightMapper`,
    `FlightConfiguration`, `FlightState`, existing `RacingMapper` and
    `GamepadReport` compiled and executed with Swift 6 mode:
    roll signs, pitch/orientation sign, deadzone, unrelated-axis rejection,
    arbitrary held baseline, exact return, q/-q equivalence, nonfinite input,
    recenter preserving independent controls, button release, neutral payload,
-   private-host/key validation and a byte-exact cross-language packet fixture.
-2. **15 production Python tests PASS**, including real kernel UDP datagrams,
+   private-host/key validation, a byte-exact cross-language packet fixture,
+   fresh re-arm sessions, 30 neutral frames, monotonic sequences and independent
+   held-input release gates (including repeated re-arm).
+2. **17 production Python tests PASS**, including real kernel UDP datagrams,
    HMAC/tamper/range/length rejection, sequence ordering, ownership/replay,
    independent release, timeout/recovery/shutdown and all Xbox backend output
-   calls through an injected vgamepad API.
+   calls through an injected vgamepad API. New regressions prove real-UDP timeout
+   while old nonzero states continue, fresh-session re-arm, retired-session
+   rejection and subsequent new input. Another test covers re-arm before the
+   previous owner has expired (600 ms handshake spans the 300 ms watchdog).
 3. Changed Swift files **parse successfully for arm64-apple-ios15.0**.
    Syntax parsing is **not** iOS typechecking/linking or an IPA build.
 4. `git diff --check` PASS. Protected BLE/HOGP files remain unchanged.
@@ -98,7 +107,8 @@ GitHub's effective credential status is unavailable on the server; a non-mutatin
 failed with “could not read Username … terminal prompts disabled”. Thus the branch
 is committed locally, not published, and no exact-HEAD Actions result exists.
 
-Parent next steps: independently review implementation commit `ea5fe21`, provide
+Parent next steps: independently recheck the recovery fix following the review
+blocker (see recovery follow-up below), provide
 an authorized server-side GitHub publication route, push the feature branch
 (no force/main push), open a PR based on `feat/tv-wifi-remote` or dispatch the
 unsigned workflow on the exact branch, then verify exact-HEAD tests/build and
@@ -116,3 +126,36 @@ device removal by the driver/process and requires physical acceptance.
 contains exact Windows commands and dependency prerequisites.
 The ASUS computer was explicitly unavailable and was not accessed; all work ran
 on the server. Huawei and the other person's Mac were not used.
+
+## Recovery follow-up for independent recheck
+
+Recovery contract: **`258b23e`** (SPEC §13.1), following the independent review of
+`80a2c3d`. Implementation: **`cd7082cc4e9b9587c0317559de0dfbeeabfceedc`**
+(`fix(game): re-arm flight safely after UDP timeout [spec 258b23e]`).
+The following documentation-only commit records these results.
+The untracked independent-review report was preserved unchanged.
+
+Changed files:
+- `BTRemote/FlightGamepad.swift`: production-testable `FlightStream` (fresh UUID,
+  sequence and 30 neutral packets) and `FlightReleaseGate`; sender uses the stream.
+- `BTRemote/GyroAim.swift`: explicit reconnect restarts the motion generation and
+  sender, clears all cached sources, captures a fresh baseline and blocks old
+  holds until individual release; scene orientation change recenters gyro.
+- `BTRemote/KeyboardView.swift`: visible RECONNECT / RE-ARM plus instructions;
+  UIView reader obtains orientation from its own window scene, not another scene.
+- `BTRemoteTests/FlightTests.swift`: stream/neutral interval/release-gate regressions.
+- `companion/FlightReceiver/test_receiver.py`: actual UDP timeout → continuous
+  rejected nonzero old state → new authenticated neutral session/source port → rejected old
+  session → accepted new input; active-owner takeover interval regression.
+- `companion/FlightReceiver/README.md` and this report: recovery/orientation guidance.
+
+Extra shared `GamepadTests` compilation was attempted but is unavailable on Linux:
+`HIDProfile.swift` imports Apple-only CoreBluetooth (and the harness uses CoreGraphics).
+No existing gamepad tests were changed; their full run remains a macOS CI gate.
+
+Verified on the server: **105 Swift checks, 17 Python tests**, iOS-target Swift
+syntax parsing and `git diff --check` pass. Production receiver behavior is unchanged.
+Motion/scene callbacks, SwiftUI controls and networking still need exact-HEAD
+macOS CI typechecking/build, then real iPad/Windows/Steam acceptance. This is not
+a new IPA or hardware acceptance claim. GitHub publication remains unavailable;
+return the local commit to the parent for independent recheck.
