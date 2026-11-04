@@ -74,6 +74,40 @@ struct FlightTests {
         state = .zero
         expect(state.payload(session: uuid, sequence: 1).suffix(8) == Data(repeating: 0, count: 8),
                "neutral report clears all controls")
+        let heldInput = FlightState(buttons: 3, lx: 127, ly: -127,
+                                    rx: 50, ry: -50, lt: 255, rt: 255)
+        var oldStream = FlightStream()
+        _ = oldStream.next(heldInput)
+        var rearmed = FlightStream()
+        expect(rearmed.session != oldStream.session, "re-arm creates fresh random session")
+        for frame in 1...30 {
+            let packet = rearmed.next(heldInput)
+            expect(packet.suffix(8) == Data(repeating: 0, count: 8),
+                   "re-arm handshake stays neutral despite held inputs")
+            expect(rearmed.sequence == UInt64(frame), "neutral handshake sequence advances")
+        }
+        expect(rearmed.next(heldInput).suffix(8) == heldInput.payload(
+            session: rearmed.session, sequence: 31).suffix(8),
+               "new input follows neutral takeover interval")
+        var gate = FlightReleaseGate()
+        gate.rearm(held: heldInput, dragging: true)
+        expect(!gate.button(1, pressed: true), "held A cannot replay after re-arm")
+        expect(!gate.button(2, pressed: true), "held B independently blocked")
+        expect(gate.button(4, pressed: true), "new unrelated X press accepted")
+        expect(gate.button(1, pressed: false) && gate.button(1, pressed: true),
+               "release then new A press re-arms only A")
+        expect(!gate.button(2, pressed: true), "B still requires its own release")
+        expect(!gate.trigger(right: true, pressed: true) &&
+               !gate.trigger(right: false, pressed: true), "both held triggers blocked")
+        expect(gate.trigger(right: true, pressed: false) &&
+               gate.trigger(right: true, pressed: true), "RT release then press accepted")
+        expect(!gate.trigger(right: false, pressed: true), "LT independently blocked")
+        expect(gate.camera, "old camera gesture blocked")
+        gate.rearm(held: .zero, dragging: false)
+        expect(gate.camera && !gate.button(2, pressed: true),
+               "repeated re-arm cannot clear pending release gates")
+        gate.endCamera()
+        expect(!gate.camera, "camera end permits a new gesture")
         print("FLIGHT: \(checks) checks passed")
     }
 }

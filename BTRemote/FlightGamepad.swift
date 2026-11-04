@@ -82,6 +82,48 @@ struct FlightState: Equatable, Sendable {
     }
 }
 
+/// Fresh-session recovery: 30 neutral frames at 50 Hz span the old owner's watchdog.
+struct FlightStream {
+    private(set) var session = UUID()
+    private(set) var sequence: UInt64 = 0
+    private var neutralRemaining = 30
+
+    mutating func next(_ latest: FlightState) -> Data {
+        sequence += 1
+        let state = neutralRemaining > 0 ? FlightState.zero : latest
+        neutralRemaining = max(0, neutralRemaining - 1)
+        return state.payload(session: session, sequence: sequence)
+    }
+}
+
+/// A re-arm discards held input until its corresponding release/new gesture.
+struct FlightReleaseGate {
+    private var buttons: UInt16 = 0
+    private var lt = false
+    private var rt = false
+    private(set) var camera = false
+
+    mutating func rearm(held: FlightState, dragging: Bool) {
+        buttons |= held.buttons
+        lt = lt || held.lt != 0
+        rt = rt || held.rt != 0
+        camera = camera || dragging
+    }
+    mutating func button(_ bit: UInt16, pressed: Bool) -> Bool {
+        if !pressed { buttons &= ~bit }
+        return buttons & bit == 0
+    }
+    mutating func trigger(right: Bool, pressed: Bool) -> Bool {
+        if right {
+            if !pressed { rt = false }
+            return !rt
+        }
+        if !pressed { lt = false }
+        return !lt
+    }
+    mutating func endCamera() { camera = false }
+}
+
 #if os(iOS)
 import CryptoKit
 import Network
@@ -120,12 +162,10 @@ final class FlightSender: ObservableObject {
     @Published private(set) var status = "Not configured"
     private var connection: NWConnection?
     private var heartbeat: Task<Void, Never>?
-    private var session = UUID()
-    private var sequence: UInt64 = 0
+    private var stream = FlightStream()
     private var key: SymmetricKey?
     private var sending = false
     private var latest = FlightState.zero
-    private var handshakeRemaining = 3
 
     func start() {
         stop()
@@ -137,16 +177,14 @@ final class FlightSender: ObservableObject {
             return
         }
         key = SymmetricKey(data: bytes)
-        session = UUID()
-        sequence = 0
-        handshakeRemaining = 3
-        let generation = session
+        stream = FlightStream()
+        let generation = stream.session
         let conn = NWConnection(host: NWEndpoint.Host(host), port: 26761, using: .udp)
         connection = conn
         status = "Connecting UDP…"
         conn.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
-                guard let self, self.session == generation else { return }
+                guard let self, self.stream.session == generation else { return }
                 switch state {
                 case .ready: self.status = "UDP sending (receiver not acknowledged)"
                 case .failed: self.stop(); self.status = "UDP failed — check Settings/network"
@@ -168,17 +206,14 @@ final class FlightSender: ObservableObject {
 
     private func flush() {
         guard !sending, let connection, let key, connection.state == .ready else { return }
-        sequence += 1
-        // Initial neutral packets allow receiver ownership without replaying held input.
-        let state = handshakeRemaining > 0 ? FlightState.zero : latest
-        handshakeRemaining = max(0, handshakeRemaining - 1)
-        var packet = state.payload(session: session, sequence: sequence)
+        // Neutral takeover spans the previous owner watchdog, including explicit re-arm.
+        var packet = stream.next(latest)
         packet.append(contentsOf: HMAC<SHA256>.authenticationCode(for: packet, using: key))
         sending = true
-        let generation = session
+        let generation = stream.session
         connection.send(content: packet, completion: .contentProcessed { [weak self] error in
             Task { @MainActor in
-                guard let self, self.session == generation else { return }
+                guard let self, self.stream.session == generation else { return }
                 self.sending = false
                 if error != nil { self.stop(); self.status = "UDP send failed" }
             }
@@ -193,7 +228,7 @@ final class FlightSender: ObservableObject {
         heartbeat = nil
         connection?.cancel()
         connection = nil
-        session = UUID() // invalidate late callbacks from the old connection
+        stream = FlightStream() // invalidate late callbacks from the old connection
         sending = false
         key = nil
         latest = .zero
@@ -212,7 +247,7 @@ struct FlightSettingsView: View {
     @State private var keyStatus = ""
     var body: some View {
         Section(header: Text("Ace Combat / FLIGHT (Wi-Fi)"),
-                footer: Text("Run the Windows FlightReceiver on your LAN. Enter its private IPv4 and pairing key. FLIGHT creates XInput through the receiver, not Bluetooth. Re-enter GAME after changing settings.")) {
+                footer: Text("Run the Windows FlightReceiver on your LAN. Enter its private IPv4 and pairing key. FLIGHT creates XInput through the receiver, not Bluetooth. Tap RECONNECT / RE-ARM in FLIGHT after changing settings.")) {
             TextField("Windows LAN IPv4", text: $host)
                 .keyboardType(.decimalPad)
                 .textInputAutocapitalization(.never)

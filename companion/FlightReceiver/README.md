@@ -33,10 +33,12 @@ starts omit `--create-key`; it deliberately refuses to overwrite existing keys.
 On iPad allow Local Network, choose **PC → GAME → FLIGHT**, hold the iPad in
 landscape in a comfortable neutral pose and press **RECENTER**. Without BLE,
 the disconnected PC surface includes **Open FLIGHT over Wi-Fi** and Settings.
-Re-enter GAME after editing connection fields. Keep the iPad app foreground.
+Tap **RECONNECT / RE-ARM** after editing connection fields. Keep the iPad app foreground.
 Rotate the screen like a steering wheel for roll; tilt forwards/backwards for pitch.
-The landscape pose at mode entry fixes the pitch sign; re-enter FLIGHT if changing
-between landscape orientations. The pitch direction is a tunable hardware
+Orientation comes from the FLIGHT view’s own window scene. Every orientation
+change recenters gyro; portrait/unknown orientation keeps gyro axes neutral.
+Hold landscape for gyro, then use RECENTER in your comfortable pose.
+The pitch direction is a tunable hardware
 acceptance item: if necessary invert pitch in the game's controller settings.
 
 ## Steam / Ace Combat
@@ -68,13 +70,21 @@ provided: packets reveal controller state, but cannot be modified/forged without
 the key. This is a local trusted-LAN design, not an Internet remote-control server.
 
 The sender keeps only newest state and sends at 50 Hz, at most one send pending.
-Three neutral startup packets precede input. The receiver rejects bad MACs,
+Thirty neutral startup packets (600 ms at 50 Hz) precede input, spanning the
+previous session’s 300 ms watchdog even when it was still active.
+The receiver rejects bad MACs,
 bad lengths/ranges, duplicate/old sequence numbers and concurrent peers.
 After **300 ms** with no new authenticated packet it releases everything,
-even if malformed traffic continues. After silence, release **all** held
-controls (return gyro to neutral/recenter, end drag, release buttons/triggers)
-to provide a fresh neutral packet before resuming; a new session likewise starts
-neutral. If the UDP source port changes, re-enter FLIGHT to create a new session.
+even if malformed traffic continues. After silence, tap the visible
+**RECONNECT / RE-ARM** button in FLIGHT. It clears
+all sources, creates a fresh random session and neutral handshake, and captures
+your current pose as a new gyro baseline; you do not have to find an exact zero
+pose. Release and re-press any previously held buttons/triggers; end the old
+camera drag and start a new one. Held inputs are not silently replayed. Wait about
+one second before resuming. Use this action also after source-port/network or
+Settings changes. Status is local UDP sending, not receiver acknowledgement.
+An unchanged old session remains blocked while streaming nonzero state after a
+timeout (it can also recover if every field genuinely returns to zero).
 Retired session IDs cannot take over again during a receiver process lifetime.
 After 256 session replacements, restart the receiver to renew bounded state.
 Ctrl+C neutralizes before exit. A hard-killed receiver relies on the virtual

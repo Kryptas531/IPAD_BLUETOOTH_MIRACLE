@@ -628,7 +628,13 @@ struct KeyboardView: View {
 
         private var flightControls: some View {
             VStack(spacing: 4) {
-                FlightStatusView(sender: gyro.flightSender)
+                HStack {
+                    FlightStatusView(sender: gyro.flightSender)
+                    Button("RECONNECT / RE-ARM") { gyro.reconnectFlight() }
+                        .buttonStyle(.bordered)
+                }
+                Text("After Wi-Fi loss: re-arm, then release and re-press controls. Gyro requires landscape; rotation recenters.")
+                    .font(.caption2)
                 HStack(spacing: 4) {
                     racingTrigger("LT", .brake)
                     racingTrigger("RT", .gas)
@@ -646,6 +652,7 @@ struct KeyboardView: View {
                         .buttonStyle(.bordered)
                 }.frame(height: 44)
             }
+            .background(FlightOrientationReader(onChange: gyro.updateFlightOrientation))
         }
 
         private func flightButton(_ label: String, _ bit: UInt16) -> some View {
@@ -1435,4 +1442,45 @@ private final class KeyTypist: ObservableObject {
             onTouchEnded()
         }
     }
+#endif
+
+#if os(iOS)
+/// Read only the hosting view's scene; unrelated connected windows cannot set pitch sign.
+private struct FlightOrientationReader: UIViewRepresentable {
+    var onChange: (UIInterfaceOrientation) -> Void
+
+    func makeUIView(context: Context) -> OrientationView {
+        let view = OrientationView()
+        view.onChange = onChange
+        return view
+    }
+    func updateUIView(_ view: OrientationView, context: Context) {
+        view.onChange = onChange
+        view.setNeedsLayout()
+    }
+
+    final class OrientationView: UIView {
+        var onChange: ((UIInterfaceOrientation) -> Void)?
+        private var last: UIInterfaceOrientation?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            publishOrientation()
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            publishOrientation()
+        }
+        private func publishOrientation() {
+            let orientation = window?.windowScene?.interfaceOrientation ?? .unknown
+            guard last != orientation else { return }
+            last = orientation
+            // Avoid mutating SwiftUI state during layout/update.
+            Task { @MainActor [weak self] in
+                guard let self, self.last == orientation else { return }
+                self.onChange?(orientation)
+            }
+        }
+    }
+}
+
 #endif

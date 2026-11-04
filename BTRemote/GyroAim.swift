@@ -227,10 +227,27 @@ struct RacingSourceState: Sendable {
         private var flight = FlightState.zero
         private var flightOrigin: CGPoint?
         private var motionGeneration = UUID()
-        private var flightLandscapeRight = false
+        private var flightLandscapeRight: Bool?
+        private var flightReleaseGate = FlightReleaseGate()
+
+        func updateFlightOrientation(_ orientation: UIInterfaceOrientation) {
+            let right: Bool? = orientation.isLandscape ? orientation == .landscapeRight : nil
+            guard right != flightLandscapeRight else { return }
+            flightLandscapeRight = right
+            if mode == .flight { recenter() }
+        }
+
+        func reconnectFlight() {
+            guard mode == .flight else { return }
+            flightReleaseGate.rearm(held: flight, dragging: flightOrigin != nil)
+            // Restart invalidates queued motion callbacks, clears all sources and
+            // takes a fresh baseline. Block held gestures until their own release.
+            start(hid)
+        }
 
         func setFlightButton(_ bit: UInt16, pressed: Bool) {
             guard mode == .flight else { return }
+            guard flightReleaseGate.button(bit, pressed: pressed) else { return }
             flight.setButton(bit, pressed: pressed)
             flightSender.update(flight)
         }
@@ -259,7 +276,6 @@ struct RacingSourceState: Sendable {
             stop()
             self.hid = hid
             if mode == .flight {
-                flightLandscapeRight = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.interfaceOrientation == .landscapeRight
                 flightSender.start()
             }
             guard manager.isDeviceMotionAvailable else {
@@ -354,6 +370,7 @@ struct RacingSourceState: Sendable {
         /// origin; only the first free touch drives right-stick X.
         func beginRacingTouch(at point: CGPoint) {
             if mode == .flight {
+                guard !flightReleaseGate.camera else { return }
                 if flightOrigin == nil { flightOrigin = point }
                 return
             }
@@ -379,6 +396,7 @@ struct RacingSourceState: Sendable {
         /// field keeps whatever else is still held.
         func endRacingTouch() {
             if mode == .flight {
+                flightReleaseGate.endCamera()
                 flightOrigin = nil
                 flight.rx = 0
                 flight.ry = 0
@@ -405,6 +423,7 @@ struct RacingSourceState: Sendable {
         /// report, so both can be present at once and each releases independently.
         func setRacingTrigger(_ trigger: GamepadTrigger, pressed: Bool) {
             if mode == .flight {
+                guard flightReleaseGate.trigger(right: trigger == .gas, pressed: pressed) else { return }
                 if trigger == .gas { flight.rt = pressed ? 255 : 0 }
                 else { flight.lt = pressed ? 255 : 0 }
                 flightSender.update(flight)
@@ -432,6 +451,10 @@ struct RacingSourceState: Sendable {
                 stop()
                 return
             }
+            if mode == .flight && flightLandscapeRight == nil {
+                previous = nil
+                return
+            }
             guard let p = previous else {
                 previous = current
                 carryX = 0
@@ -439,6 +462,7 @@ struct RacingSourceState: Sendable {
                 return
             }
             if mode == .flight {
+                guard let flightLandscapeRight else { return }
                 let axes = FlightMapper.axes(from: p, to: current,
                                             landscapeRight: flightLandscapeRight)
                 flight.lx = axes.lx

@@ -135,6 +135,56 @@ class ReceiverTests(unittest.TestCase):
                 self.assertTrue(self.receiver.receive(packet, peer, seq * .01))
                 self.assertEqual(self.outputs[-1], state)
 
+    def test_real_udp_timeout_nonzero_then_explicit_fresh_session_rearm(self):
+        held = State(buttons=255, lx=127, ly=-127, rx=50, ry=-50, lt=255, rt=255)
+        fresh = b"r" * 16
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, \
+             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client, \
+             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as rearmed_client:
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(1)
+
+            def datagram(session, seq, state, now):
+                source = rearmed_client if session == fresh else client
+                source.sendto(encode(KEY, session, seq, state), server.getsockname())
+                packet, peer = server.recvfrom(1024)
+                return self.receiver.receive(packet, peer, now)
+
+            self.assertTrue(datagram(SESSION, 1, ZERO, 0))
+            self.assertTrue(datagram(SESSION, 2, held, .02))
+            self.assertTrue(self.receiver.expire(.321))
+            # Restored Wi-Fi continuously streams deflected gyro and held buttons:
+            # no accidental replay, but old sender cannot recover by itself.
+            for seq in range(3, 33):
+                self.assertFalse(datagram(SESSION, seq, held, .4 + seq * .02))
+                self.assertEqual(self.receiver.state, ZERO)
+            # Explicit UI re-arm discards old sources and starts a new session.
+            self.assertTrue(datagram(fresh, 1, ZERO, 1.1))
+            self.assertEqual(self.receiver.state, ZERO)
+            for seq in range(2, 31):
+                self.assertTrue(datagram(fresh, seq, ZERO, 1.1 + seq * .02))
+            self.assertFalse(datagram(SESSION, 999, held, 1.72))
+            self.assertFalse(datagram(SESSION, 1000, ZERO, 1.73))
+            self.assertTrue(datagram(fresh, 31, State(buttons=4, lx=-80, rt=255), 1.74))
+            self.assertEqual(self.outputs[-1], State(buttons=4, lx=-80, rt=255))
+            # Replayed retired owner is still rejected after the next timeout.
+            self.receiver.expire(2.1)
+            self.assertFalse(datagram(SESSION, 1001, ZERO, 2.11))
+            self.assertEqual(self.receiver.state, ZERO)
+
+    def test_rearm_neutral_interval_can_replace_still_active_owner(self):
+        self.send()
+        self.send(State(lx=127, buttons=1), 2, .02)
+        fresh = b"r" * 16
+        accepted = []
+        for frame in range(30):
+            accepted.append(self.send(ZERO, frame + 1, .04 + frame * .02, fresh))
+        self.assertFalse(accepted[0])
+        self.assertTrue(accepted[-1])
+        self.assertEqual(self.receiver.owner, (PEER, fresh))
+        self.assertTrue(self.send(State(lx=-127), 31, .64, fresh))
+        self.assertFalse(self.send(ZERO, 999, 1.0))
+
     def test_xinput_backend_all_fields_and_button_order(self):
         calls = []
         class Pad:
