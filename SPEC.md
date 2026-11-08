@@ -1484,33 +1484,34 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
   Verify iOS compilation in unsigned CI; actual grip comfort and simultaneous
   physical touches require iPad acceptance and are not proven by compiler tests.
 
-### TV media actions (contract)
-The TV library offers a typed TMDB movie/series card action using a positive numeric ID,
-with the resulting HTTPS link sent through the existing TV session. Lampa handling and
-torrent selection depend on the installed app and are not claimed as confirmed. Resume
-requires a separately configured verified link or bridge; without it, show unavailable.
-TorrServer browsing and file selection use its documented HTTP API, with separate open
-and VLC play actions. Restart requires an explicitly configured Windows companion and
-exact executable/arguments; never provide an arbitrary remote command endpoint. Network
-or TV command acceptance is not proof of playback. Preserve existing library and settings.
+### TV media actions — TV-only correction
+All actions in the primary TV surface target applications on the paired Android TV,
+not Windows. Remove the Windows HTTPS media bridge controls from this surface; preserve
+its files and existing runtime without changing them. No Windows token, certificate,
+service or process is required for TV actions.
 
-#### Authenticated media bridge
-The optional standard-library Python Windows bridge binds one explicitly configured private
-IPv4 address, serves HTTPS with an operator-provided certificate/key, and requires a random
-bearer token (at least 32 characters) before every request, including capability discovery.
-iPad uses normal platform TLS trust: install a trusted LAN certificate, never bypass trust.
-Secrets stay in local configuration / iPad Keychain, not Git. Requests are typed, bounded JSON;
-no command strings, paths or process IDs are accepted from clients. Logs omit titles and URLs.
-Endpoints expose capabilities, TorrServer list/get, explicit newest (unavailable without unique
-authoritative added timestamp), chosen-file VLC playback, web UI link, and fixed local restart.
-Restart stops only the bridge-owned process; an existing unknown process is never killed.
-Start uses the fixed TorrServer executable and existing data directory, preserving its database.
-Success requires readiness, not merely process creation. VLC receives a validated stream URL
-as one argv element with shell=False. A file must be explicitly selected, even for one file.
-Lampa chooser/card and resume return only operator-configured verified adapter links; no generic
-TMDB HTTPS link is represented as a Lampa card. Resume requires authoritative history supplied
-by that adapter; absence is unavailable, never inferred from a last command. Adapter is a fixed
-HTTPS endpoint returning {url}; queries contain only validated media type/ID and action.
-iPad settings expose bridge URL/token; capabilities and errors are visible, requests never replay
-on TV target changes. Open web UI is distinct from Windows VLC play. Physical playback remains
-unverified until acceptance. No BLE, foreground helper, service, firewall or driver changes.
+Use the existing authenticated Android TV Remote v2 app-link/key channel. Provide direct
+Lampa launch (owner-observed `lampa://top.rootu.lampa`) and its local history screen
+(`lampa://top.rootu.lampa/update_channel/hist`). History navigation does not read, export,
+or automatically play history. Label it "Lampa history on TV", never "resume last file".
+TMDB movie/series card links may use the installed Lampa Android intent handler, but
+must disclose that Android chooses the HTTPS handler; they are not verified chooser or
+resume actions. The user chooses Torrents/files on TV with the existing remote keys.
+Add Lampa to the optional app catalog without changing existing saved library records.
+
+Remote v2 app-link requests contain a URI only, not Android Intent extras or arbitrary
+JavaScript. Do not fabricate resume/restart capability: native Lampa resume requires
+`continueWatch`, `lampaActivity` and `android.intent.extra.START_PLAYBACK` extras; its
+public history URI only opens history. Restarting TorrServer on TV requires an authorized
+TV-side lifecycle API; a Windows process restart is never a substitute. Newest selection
+requires a reachable API on the TV with authoritative timestamps; VLC playback must
+resolve on TV, not a Windows executable. Report these missing capabilities explicitly.
+Any later TV-side controller/extension must authenticate commands and keep raw playback
+history on TV, accessed only by a user-invoked action. Never reuse Windows history or
+infer playback success from command acceptance.
+
+Public evidence: lampa-app/LAMPA commit 28d7616f52d969abd6a93d8692b15a8525b36efc,
+MainActivity.kt processIntent/handleChannelIntent/handleContinueWatch and AndroidManifest;
+yumata/lampa-source commit 86c2b099b19f7058ea304dfa43a8b1e18a2e0492,
+components/full/start/torrents.js and interaction/player.js. Installed version/intent
+resolution and TV-side TorrServer management endpoint remain physical acceptance gates.
