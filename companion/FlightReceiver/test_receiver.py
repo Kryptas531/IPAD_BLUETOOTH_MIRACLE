@@ -195,6 +195,10 @@ class ReceiverTests(unittest.TestCase):
         fake = types.SimpleNamespace(VX360Gamepad=Pad, XUSB_BUTTON=buttons)
         with patch.dict(sys.modules, {"vgamepad": fake}):
             backend = Xbox()
+            self.assertEqual(calls, [
+                ("left_joystick_float", {"x_value_float": 1 / 32767, "y_value_float": 0}),
+                ("update", {}), ("reset", {}), ("update", {})])
+            calls.clear()
             backend(State(255, -127, 127, 127, -127, 255, 128))
             self.assertEqual([kwargs["button"] for name, kwargs in calls
                               if name == "press_button"], names)

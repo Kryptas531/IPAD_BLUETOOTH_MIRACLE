@@ -123,6 +123,14 @@ class Xbox:
         import vgamepad as vg
         self.vg = vg
         self.pad = vg.VX360Gamepad()
+        # ViGEmBus starts with a captured USB report containing nonzero sticks,
+        # but its comparison cache starts at zero: an initial zero is discarded.
+        # Prime a one-count axis change (no buttons), then publish true neutral.
+        # This is 1/32767 of travel, below the standard XInput stick deadzones.
+        self.pad.left_joystick_float(x_value_float=1 / 32767, y_value_float=0)
+        self.pad.update()
+        self.pad.reset()
+        self.pad.update()
         self.bits = [
             vg.XUSB_BUTTON.XUSB_GAMEPAD_A, vg.XUSB_BUTTON.XUSB_GAMEPAD_B,
             vg.XUSB_BUTTON.XUSB_GAMEPAD_X, vg.XUSB_BUTTON.XUSB_GAMEPAD_Y,
