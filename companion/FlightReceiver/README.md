@@ -60,6 +60,37 @@ acceptance item: if necessary invert pitch in the game's controller settings.
 No Windows/Steam/Ace Combat/iPad physical acceptance has been performed by these
 Linux tests; virtual driver installation and game recognition need the gaming PC.
 
+## Cloud sessions (including Fog Play)
+
+Run the receiver on the **Windows client playing the stream**, not on an
+unmanaged cloud PC: iPad LAN UDP → local Xbox/XInput → streaming client's
+controller forwarding → remote game's controller input. Local Steam settings
+do not configure Steam on the remote PC. The direct local-game acceptance above
+does not prove cloud forwarding.
+
+Check each gate separately, without interrupting an active game:
+
+1. Receiver prerequisites: Python 3.10+, importable `vgamepad`, running ViGEmBus,
+   and reachable private LAN UDP 26761. A running driver alone does not mean the
+   Python package or receiver is installed. Installing vgamepad can launch a
+   driver installer; arrange an installation window first.
+2. Local Windows: in `joy.cpl`, verify both sticks, independent LT/RT and all
+   buttons. This establishes local virtual-controller input only.
+3. Browser client: focus the stream and press a controller button so Gamepad API
+   can expose it; verify controller forwarding is enabled/supported by the exact
+   streaming client. Native streaming clients require their own controller test.
+4. Remote game: verify the remote machine/game receives both sticks, LT/RT and
+   simultaneous buttons. Check the game's actual bindings and title/version,
+   rather than assuming Ace Combat 7 settings apply to another title.
+5. Disconnect iPad Wi-Fi and confirm the remote game returns to neutral; repeat
+   after explicit RECONNECT / RE-ARM. A local watchdog test alone does not prove
+   the streaming client releases remote inputs.
+
+Fog Play has a [controller-supported game category](https://fogplay.mts.ru/feature/controller-support/);
+this is not evidence that this virtual pad forwards in a particular live session.
+DualSense/PS5 emulation, adaptive triggers and native Bluetooth Xbox HID are not
+implemented. The intended device identity here is Xbox 360/XInput.
+
 ## Neutralization and network behavior
 
 Protocol: 68 bytes: `IGP1` + 16-byte session UUID + big-endian uint64 sequence +

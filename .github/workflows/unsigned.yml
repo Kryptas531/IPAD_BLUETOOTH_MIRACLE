@@ -106,9 +106,34 @@ jobs:
           cd .build/
           /usr/bin/zip -qry ../build/BTRemote.ipa Payload
 
+      - name: Record exact build provenance
+        env:
+          BUILD_SHA: ${{ github.sha }}
+          BUILD_REF: ${{ github.ref }}
+          BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          ipa = Path("build/BTRemote.ipa")
+          metadata = {
+              "commit": os.environ["BUILD_SHA"],
+              "ref": os.environ["BUILD_REF"],
+              "run_url": os.environ["BUILD_RUN_URL"],
+              "ipa_sha256": hashlib.sha256(ipa.read_bytes()).hexdigest(),
+              "signing": "unsigned; requires local re-signing",
+          }
+          Path("build/build-info.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("IPA source: `" + metadata["commit"] + "`\n\n")
+              summary.write("SHA256: `" + metadata["ipa_sha256"] + "`\n")
+          PY
+
       - name: Upload unsigned ipa
         uses: actions/upload-artifact@v4
         with:
           name: btr-remote-unsigned-ipa
-          path: build/BTRemote.ipa
+          path: |
+            build/BTRemote.ipa
+            build/build-info.json
           if-no-files-found: error
