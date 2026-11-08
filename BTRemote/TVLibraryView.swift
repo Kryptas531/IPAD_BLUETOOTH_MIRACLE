@@ -13,6 +13,8 @@ struct TVLibraryView: View {
     @State private var linkGeneration: UInt64 = 0
     @State private var query = ""
     @State private var actionError: String?
+    @State private var tmdbID = ""
+    @State private var tmdbSeries = false
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 230), spacing: 12)]
 
     var body: some View {
@@ -24,7 +26,7 @@ struct TVLibraryView: View {
                 Button("Retry library") { store.reload() }
             } else {
                 if let error = store.errorMessage { Text(error).font(.caption).foregroundColor(.orange) }
-                if kind == .app { searchBar(generation: generation) }
+                if kind == .app { searchBar(generation: generation); mediaActions(generation: generation) }
                 recent(generation: generation)
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(visibleItems) { item in tile(item, generation: generation) }
@@ -92,6 +94,30 @@ struct TVLibraryView: View {
                 .buttonStyle(.bordered).disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !client.canLaunchApps)
         }
     }
+    private func mediaActions(generation: UInt64) -> some View {
+        VStack(alignment: .leading) {
+            Text("Lampa card").font(.headline)
+            Picker("Type", selection: $tmdbSeries) {
+                Text("Movie").tag(false)
+                Text("Series").tag(true)
+            }.pickerStyle(.segmented)
+            HStack {
+                TextField("TMDB ID", text: $tmdbID).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                Button("Open on TV") {
+                    guard acceptsTarget(), generation == client.sessionGeneration else { return }
+                    do {
+                        let target = try TVLaunchTarget.tmdbCard(id: tmdbID, series: tmdbSeries)
+                        actionError = client.launch(target, expectedGeneration: generation)
+                            ? "Command sent. TV app link handling is unverified; check its screen."
+                            : "TV cannot open this link on the current connection."
+                    } catch { actionError = "Enter a positive numeric TMDB ID." }
+                }.disabled(!client.canLaunchApps)
+            }
+            Text("Lampa handling and torrent selection depend on the TV app. Resume needs a verified link or bridge and is unavailable here.")
+                .font(.caption).foregroundColor(.secondary)
+        }
+    }
+
     private func search(_ generation: UInt64) {
         guard acceptsTarget(), generation == client.sessionGeneration else { return }
         do {

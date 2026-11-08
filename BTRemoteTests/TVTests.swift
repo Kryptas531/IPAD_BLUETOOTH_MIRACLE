@@ -216,6 +216,13 @@ struct TVTests {
     }
 
     static func libraryChecks() throws {
+        let movie = try TVLaunchTarget.tmdbCard(id: "123", series: false)
+        let series = try TVLaunchTarget.tmdbCard(id: "456", series: true)
+        try expect(movie.wireLink == "https://www.themoviedb.org/movie/123", "Movie card URL")
+        try expect(series.wireLink == "https://www.themoviedb.org/tv/456", "Series card URL")
+        for id in ["", "0", "1/other", "12?x=1", "１２", "1234567890123"] {
+            try rejects({ _ = try TVLaunchTarget.tmdbCard(id: id, series: false) }, "Invalid TMDB ID rejected")
+        }
         try expect(TVFeature.requested.contains(.appLink), "APP_LINK512 requested")
         try expect(TVRemoteWire.encoded(.appLink("https://x")) == hex("0ed2050b0a0968747470733a2f2f78"), "Independent field90 nested field1 fixture")
         let target = try TVLaunchTarget.parse("org.xbmc.kodi", kind: .app)

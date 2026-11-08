@@ -13,6 +13,15 @@ struct TVLaunchTarget: Equatable, Sendable {
     let wireLink: String
     let expectedPackage: String?
 
+    static func tmdbCard(id: String, series: Bool) throws -> TVLaunchTarget {
+        guard !id.isEmpty, id.utf8.count <= 12,
+              id.utf8.allSatisfy({ (48...57).contains($0) }),
+              id.contains(where: { $0 != "0" }) else {
+            throw TVLibraryError(description: "Enter a positive numeric TMDB ID.")
+        }
+        return try parse("https://www.themoviedb.org/\(series ? "tv" : "movie")/\(id)", kind: .bookmark)
+    }
+
     /// Parse a raw target value. For `.app`, a bare Android package is tried
     /// first and converted to `market://launch?id=<package>` (see
     /// tronikos/androidtvremote2 @ c5d729e); otherwise a URI is parsed.
