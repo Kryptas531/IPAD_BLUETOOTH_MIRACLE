@@ -1466,3 +1466,20 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
 - Regression uses real UDP sockets: continuously nonzero old-session packets
   after timeout remain neutral, explicit fresh-session neutral handshake succeeds,
   old packets are rejected, then new-session input is accepted.
+
+### 13.2 Handheld FLIGHT deck
+- Replace the inherited GAME button rows with a dedicated safe-area-aware flight
+  deck. Keep all flight controls visible; generic keyboard/speed/debug chrome and
+  its auto-hide timer must not displace flight controls. Keep an explicit exit.
+- Landscape uses left-thumb LT/RT and LB/RB clusters, a right-thumb Xbox A/B/X/Y
+  diamond, a clear central camera drag area, and separated BACK/START controls.
+  Preserve the existing Xbox mapping without claiming game-specific bindings.
+- Primary touch targets are at least 64 pt; auxiliary actions at least 44 pt.
+  Fit compact landscape and portrait without overlapping targets or scrolling;
+  portrait explains that gyro needs landscape while buttons still work.
+- Keep RECENTER and RE-ARM visible, distinct from held gameplay buttons. Reuse
+  independent momentary press/release and cancellation handling. Decorative layers
+  never intercept the central camera surface. Preserve watchdog, pairing and wire.
+- Show local UDP sending status without a misleading receiver-error message.
+  Verify iOS compilation in unsigned CI; actual grip comfort and simultaneous
+  physical touches require iPad acceptance and are not proven by compiler tests.
