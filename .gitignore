@@ -41,3 +41,7 @@ SideStore-0.7.0-alpha/
 __pycache__/
 *.pyc
 flight-key.txt
+
+# TV media credentials and TLS material stay local
+companion/TVMedia/*.local.json
+companion/TVMedia/*.pem

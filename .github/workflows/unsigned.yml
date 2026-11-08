@@ -77,6 +77,9 @@ jobs:
           .build/flight-tests
           python3 -m unittest discover -s companion/FlightReceiver -p 'test_*.py' -v
 
+      - name: Test authenticated TV media bridge
+        run: python3 -m unittest discover -s companion/TVMedia -v
+
       - name: Build unsigned (no Apple signing; same xcodebuild as build.sh)
         run: |
           set -o pipefail

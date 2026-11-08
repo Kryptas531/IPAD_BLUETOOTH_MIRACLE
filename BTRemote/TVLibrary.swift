@@ -13,6 +13,7 @@ struct TVLaunchTarget: Equatable, Sendable {
     let wireLink: String
     let expectedPackage: String?
 
+    // Generic TMDB website only; not a verified Lampa chooser or resume target.
     static func tmdbCard(id: String, series: Bool) throws -> TVLaunchTarget {
         guard !id.isEmpty, id.utf8.count <= 12,
               id.utf8.allSatisfy({ (48...57).contains($0) }),

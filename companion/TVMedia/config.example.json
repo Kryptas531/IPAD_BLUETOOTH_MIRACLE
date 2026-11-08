@@ -1,0 +1,11 @@
+{
+  "bind": "127.0.0.1",
+  "port": 9443,
+  "token": "REPLACE_WITH_RANDOM_LOCAL_SECRET_AT_LEAST_32_CHARACTERS",
+  "certificate": "C:\\LOCAL\\media-cert.pem",
+  "private_key": "C:\\LOCAL\\media-key.pem",
+  "restart_enabled": false,
+  "lampa_adapter": "",
+  "authoritative_added_field": "",
+  "web_url": ""
+}
