@@ -102,7 +102,13 @@ struct KeyboardView: View {
 
     private var editor: some View {
         GeometryReader { geo in
-            if padMode == .control {
+            if padMode == .game && flightSelected {
+                #if os(iOS)
+                FlightDeckView(gyro: gyro, exit: { padMode = .control }, settings: openSettings)
+                #else
+                Text("FLIGHT requires iPad")
+                #endif
+            } else if padMode == .control {
                 controlSurface(landscape: geo.size.width > geo.size.height)
             } else if geo.size.width > geo.size.height || (padMode == .game && gameInputMode == .flight) {
             if padMode == .game {
@@ -1446,7 +1452,7 @@ private final class KeyTypist: ObservableObject {
 
 #if os(iOS)
 /// Read only the hosting view's scene; unrelated connected windows cannot set pitch sign.
-private struct FlightOrientationReader: UIViewRepresentable {
+struct FlightOrientationReader: UIViewRepresentable {
     var onChange: (UIInterfaceOrientation) -> Void
 
     func makeUIView(context: Context) -> OrientationView {

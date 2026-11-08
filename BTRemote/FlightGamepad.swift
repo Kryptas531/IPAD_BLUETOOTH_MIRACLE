@@ -186,7 +186,7 @@ final class FlightSender: ObservableObject {
             Task { @MainActor in
                 guard let self, self.stream.session == generation else { return }
                 switch state {
-                case .ready: self.status = "UDP sending (receiver not acknowledged)"
+                case .ready: self.status = "UDP sending · Wi-Fi"
                 case .failed: self.stop(); self.status = "UDP failed — check Settings/network"
                 case .waiting: self.status = "UDP waiting — check network"
                 default: break
