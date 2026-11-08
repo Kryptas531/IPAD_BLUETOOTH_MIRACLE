@@ -1,3 +1,7 @@
+> Windows-only legacy companion, not the TV-actions solution. The primary iPad TV
+> surface no longer connects here. Do not install this or its CA/token to control
+> Lampa, TorrServer or VLC on Android TV. Existing runtime is preserved unchanged.
+
 # TV media companion
 
 Standard-library Python 3.12+, Windows personal PC. Implements SPEC `3c33ef5`.

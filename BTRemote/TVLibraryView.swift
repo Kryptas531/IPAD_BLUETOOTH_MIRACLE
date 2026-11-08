@@ -98,8 +98,8 @@ struct TVLibraryView: View {
             do {
                 let target = try TVLaunchTarget.parse(raw, kind: .app)
                 if !client.launch(target, expectedGeneration: generation) { actionError = "TV link unavailable" }
-            } catch { actionError = "Adapter returned an unsupported TV link" }
-        }, acceptsTarget: { acceptsTarget() && generation == client.sessionGeneration })
+            } catch { actionError = "Unsupported TV launch link" }
+        }, acceptsTarget: { acceptsTarget() && generation == client.sessionGeneration && client.canLaunchApps })
         .id(generation)
     }
 

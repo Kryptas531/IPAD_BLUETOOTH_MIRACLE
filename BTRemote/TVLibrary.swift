@@ -13,6 +13,11 @@ struct TVLaunchTarget: Equatable, Sendable {
     let wireLink: String
     let expectedPackage: String?
 
+    // Owner-observed package scheme; history routing checked against public Android source.
+    // History navigation is not automatic last-file playback.
+    static let lampaHome = TVLaunchTarget(wireLink: "lampa://top.rootu.lampa", expectedPackage: "top.rootu.lampa")
+    static let lampaHistory = TVLaunchTarget(wireLink: "lampa://top.rootu.lampa/update_channel/hist", expectedPackage: "top.rootu.lampa")
+
     // Generic TMDB website only; not a verified Lampa chooser or resume target.
     static func tmdbCard(id: String, series: Bool) throws -> TVLaunchTarget {
         guard !id.isEmpty, id.utf8.count <= 12,
@@ -226,10 +231,12 @@ struct TVLibrary: Codable, Equatable, Sendable {
 
     /// Suggested items the app knows about. First two (YouTube, Netflix) are
     /// "visible to owner"; the optional source-author (issue 17) apps are
-    /// Kodi, Spotify, TiviMate, SmartTube. This is a fixed catalog — the app
+    /// Kodi, Spotify, TiviMate, SmartTube, plus the owner-observed Lampa. This is a fixed catalog — the app
     /// does NOT claim to discover installed apps.
     static var catalog: [TVLibraryItem] {
-        return [youtubeItem, netflixItem, kodiItem, spotifyItem, tivimateItem, smartTubeItem]
+        return [youtubeItem, netflixItem, kodiItem, spotifyItem, tivimateItem, smartTubeItem,
+                TVLibraryItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000007")!,
+                              title: "Lampa", kind: .app, target: TVLaunchTarget.lampaHome.wireLink)]
     }
 
     /// Starting library: begins with the two owner-visible items (YouTube,

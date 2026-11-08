@@ -216,6 +216,9 @@ struct TVTests {
     }
 
     static func libraryChecks() throws {
+        try expect(TVLaunchTarget.lampaHome.wireLink == "lampa://top.rootu.lampa", "Lampa launch targets TV package")
+        try expect(TVLaunchTarget.lampaHistory.wireLink == "lampa://top.rootu.lampa/update_channel/hist", "History uses native channel route, not fake resume")
+        try expect(TVLaunchTarget.lampaHistory.expectedPackage == "top.rootu.lampa", "History expects Lampa on TV")
         let movie = try TVLaunchTarget.tmdbCard(id: "123", series: false)
         let series = try TVLaunchTarget.tmdbCard(id: "456", series: true)
         try expect(movie.wireLink == "https://www.themoviedb.org/movie/123", "Movie card URL")
@@ -269,7 +272,7 @@ struct TVTests {
 
         var library = try TVLibrary.initial.validated()
         try expect(library.items.count == 2 && library.items.allSatisfy { $0.kind == .app }, "Apps surface has initial launch tiles")
-        try expect(TVLibrary.catalog.count == 6 && Set(TVLibrary.catalog.map(\.id)).count == 6, "Editable catalog has stable distinct IDs")
+        try expect(TVLibrary.catalog.count == 7 && Set(TVLibrary.catalog.map(\.id)).count == 7, "Editable catalog has stable distinct IDs")
         var bookmark = TVLibraryItem(title: " Playlist ", kind: .bookmark, target: "https://example.com/list", symbol: "bookmark")
         try library.upsert(bookmark)
         try expect(library.items.last?.title == "Playlist", "Title trimmed on save")
