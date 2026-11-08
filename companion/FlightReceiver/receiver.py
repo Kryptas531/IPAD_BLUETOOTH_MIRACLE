@@ -127,8 +127,12 @@ class Xbox:
         # but its comparison cache starts at zero: an initial zero is discarded.
         # Prime a one-count axis change (no buttons), then publish true neutral.
         # This is 1/32767 of travel, below the standard XInput stick deadzones.
+        # Device creation returns before Windows has posted USB interrupt reads.
+        # Settle only at startup, never in the controller's normal output path.
+        time.sleep(0.5)
         self.pad.left_joystick_float(x_value_float=1 / 32767, y_value_float=0)
         self.pad.update()
+        time.sleep(0.02)
         self.pad.reset()
         self.pad.update()
         self.bits = [
