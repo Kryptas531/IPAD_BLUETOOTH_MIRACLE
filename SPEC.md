@@ -1483,3 +1483,13 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
 - Show local UDP sending status without a misleading receiver-error message.
   Verify iOS compilation in unsigned CI; actual grip comfort and simultaneous
   physical touches require iPad acceptance and are not proven by compiler tests.
+
+### TV media actions (contract)
+The TV library offers a typed TMDB movie/series card action using a positive numeric ID,
+with the resulting HTTPS link sent through the existing TV session. Lampa handling and
+torrent selection depend on the installed app and are not claimed as confirmed. Resume
+requires a separately configured verified link or bridge; without it, show unavailable.
+TorrServer browsing and file selection use its documented HTTP API, with separate open
+and VLC play actions. Restart requires an explicitly configured Windows companion and
+exact executable/arguments; never provide an arbitrary remote command endpoint. Network
+or TV command acceptance is not proof of playback. Preserve existing library and settings.
