@@ -1493,3 +1493,24 @@ TorrServer browsing and file selection use its documented HTTP API, with separat
 and VLC play actions. Restart requires an explicitly configured Windows companion and
 exact executable/arguments; never provide an arbitrary remote command endpoint. Network
 or TV command acceptance is not proof of playback. Preserve existing library and settings.
+
+#### Authenticated media bridge
+The optional standard-library Python Windows bridge binds one explicitly configured private
+IPv4 address, serves HTTPS with an operator-provided certificate/key, and requires a random
+bearer token (at least 32 characters) before every request, including capability discovery.
+iPad uses normal platform TLS trust: install a trusted LAN certificate, never bypass trust.
+Secrets stay in local configuration / iPad Keychain, not Git. Requests are typed, bounded JSON;
+no command strings, paths or process IDs are accepted from clients. Logs omit titles and URLs.
+Endpoints expose capabilities, TorrServer list/get, explicit newest (unavailable without unique
+authoritative added timestamp), chosen-file VLC playback, web UI link, and fixed local restart.
+Restart stops only the bridge-owned process; an existing unknown process is never killed.
+Start uses the fixed TorrServer executable and existing data directory, preserving its database.
+Success requires readiness, not merely process creation. VLC receives a validated stream URL
+as one argv element with shell=False. A file must be explicitly selected, even for one file.
+Lampa chooser/card and resume return only operator-configured verified adapter links; no generic
+TMDB HTTPS link is represented as a Lampa card. Resume requires authoritative history supplied
+by that adapter; absence is unavailable, never inferred from a last command. Adapter is a fixed
+HTTPS endpoint returning {url}; queries contain only validated media type/ID and action.
+iPad settings expose bridge URL/token; capabilities and errors are visible, requests never replay
+on TV target changes. Open web UI is distinct from Windows VLC play. Physical playback remains
+unverified until acceptance. No BLE, foreground helper, service, firewall or driver changes.
