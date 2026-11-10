@@ -87,6 +87,20 @@ struct FlightHorizonCadence {
     }
 }
 
+struct FlightHorizonState {
+    private(set) var sample: FlightHorizonSample?
+    private var cadence = FlightHorizonCadence()
+    mutating func update(roll: Double, pitch: Double, now: TimeInterval) -> Bool {
+        guard cadence.accepts(now: now) else { return false }
+        sample = FlightHorizonSample.make(roll: roll, pitch: pitch)
+        return true
+    }
+    mutating func clear() {
+        sample = nil
+        cadence = FlightHorizonCadence()
+    }
+}
+
 enum FlightConfiguration {
     static func privateIPv4(_ text: String) -> Bool {
         let parts = text.split(separator: ".", omittingEmptySubsequences: false)

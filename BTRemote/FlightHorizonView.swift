@@ -5,14 +5,14 @@ import SwiftUI
 @MainActor
 final class FlightHorizonModel: ObservableObject {
     @Published private(set) var sample: FlightHorizonSample?
-    private var cadence = FlightHorizonCadence()
+    private var state = FlightHorizonState()
     func update(roll: Double, pitch: Double) {
-        guard cadence.accepts(now: ProcessInfo.processInfo.systemUptime) else { return }
-        sample = FlightHorizonSample.make(roll: roll, pitch: pitch)
+        guard state.update(roll: roll, pitch: pitch, now: ProcessInfo.processInfo.systemUptime) else { return }
+        sample = state.sample
     }
     func clear() {
         if sample != nil { sample = nil }
-        cadence = FlightHorizonCadence()
+        state.clear()
     }
 }
 
