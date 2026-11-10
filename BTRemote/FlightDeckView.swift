@@ -14,38 +14,37 @@ struct FlightDeckView: View {
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
-            let compact = geometry.size.height < 540
-            let side = min(280.0, max(160.0, geometry.size.width * 0.27))
-            let key = compact ? 64.0 : 76.0
             let layout = FlightDeckLayout(width: Double(geometry.size.width), height: Double(geometry.size.height))
             ZStack {
                 FlightHorizonView(model: gyro.flightHorizon)
                     .allowsHitTesting(false).accessibilityHidden(true)
-                VStack(spacing: compact ? 8 : 16) {
-                    if landscape {
-                        HStack(spacing: 12) {
-                            throttleCluster(compact: compact).frame(width: side)
-                            cameraSurface(landscape: true)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            faceCluster(key: key).frame(width: side)
-                        }
-                        .frame(maxHeight: .infinity)
-                    } else {
-                        cameraSurface(landscape: false).frame(maxHeight: .infinity)
-                        Spacer(minLength: 0)
-                        HStack(spacing: 12) {
-                            throttleCluster(compact: true)
+                VStack(spacing: 8) {
+                    HStack(spacing: 12) {
+                        handPair(left: true).frame(width: layout.pairWidth)
+                        handPair(left: false).frame(width: layout.pairWidth)
+                    }.frame(height: 88)
+                    HStack(spacing: 12) {
+                        VStack {
+                            input("L3", detail: "STICK CLICK", color: cyan, bit: 256)
+                                .frame(width: 64, height: 64)
                             Spacer(minLength: 0)
-                            faceCluster(key: 64)
                         }
-                        Spacer(minLength: 0)
-                    }
+                        cameraSurface(landscape: landscape)
+                            .frame(width: layout.cameraWidth)
+                            .frame(maxHeight: .infinity)
+                        VStack(spacing: 8) {
+                            faceCluster(key: 64)
+                            input("R3", detail: "STICK CLICK", color: cyan, bit: 512)
+                                .frame(width: 64, height: 64)
+                        }.frame(width: 164)
+                    }.frame(maxHeight: .infinity)
                     footer
                 }
-                .padding(compact ? 12 : 20)
+                .padding(12)
             }
-            .frame(width: geometry.size.width, height: CGFloat(layout.bodyHeight))
-            .modifier(FlightBodyViewport(scrolls: layout.bodyHeight > Double(geometry.size.height)))
+            .frame(width: layout.bodyWidth, height: layout.bodyHeight)
+            .modifier(FlightBodyViewport(scrolls: layout.bodyHeight > Double(geometry.size.height)
+                || layout.bodyWidth > Double(geometry.size.width)))
             .foregroundColor(.white)
             .background(FlightOrientationReader(onChange: gyro.updateFlightOrientation).allowsHitTesting(false))
         }
@@ -72,28 +71,23 @@ struct FlightDeckView: View {
         .buttonStyle(.plain)
     }
 
-    private func throttleCluster(compact: Bool) -> some View {
-        VStack(spacing: compact ? 6 : 12) {
-            HStack(spacing: 12) {
+    /// SPEC 772bc3b: each hand owns its shoulder and inward trigger.
+    private func handPair(left: Bool) -> some View {
+        HStack(spacing: 8) {
+            if left {
                 input("LB", detail: "LEFT", color: cyan, bit: 16)
-                input("RB", detail: "RIGHT", color: cyan, bit: 32)
-            }.frame(height: 64)
-            HStack(spacing: 12) {
                 trigger("LT", detail: "BRAKE", trigger: .brake, color: .orange)
+            } else {
                 trigger("RT", detail: "THROTTLE", trigger: .gas, color: cyan)
-            }.frame(height: compact ? 64 : 104)
-            HStack(spacing: 12) {
-                input("L3", detail: "STICK CLICK", color: cyan, bit: 256)
-                input("R3", detail: "STICK CLICK", color: cyan, bit: 512)
-            }.frame(height: 64)
-        }
-        .frame(maxWidth: 280)
+                input("RB", detail: "RIGHT", color: cyan, bit: 32)
+            }
+        }.frame(maxWidth: .infinity)
     }
 
     private func faceCluster(key: Double) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             input("Y", color: .yellow, bit: 8).frame(width: key, height: key)
-            HStack(spacing: max(12, key * 0.55)) {
+            HStack(spacing: 36) {
                 input("X", color: .blue, bit: 4).frame(width: key, height: key)
                 input("B", color: .red, bit: 2).frame(width: key, height: key)
             }
@@ -187,7 +181,7 @@ private struct FlightBodyViewport: ViewModifier {
     let scrolls: Bool
     @ViewBuilder func body(content: Content) -> some View {
         if scrolls {
-            ScrollView(.vertical) { content }
+            ScrollView([.horizontal, .vertical]) { content }
         } else {
             content
         }

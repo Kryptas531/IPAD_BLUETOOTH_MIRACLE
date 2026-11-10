@@ -13,9 +13,18 @@ struct GameNavigationPolicy {
 
 /// Explicit gameplay budget: native views cannot enlarge the parent beyond this frame.
 struct FlightDeckLayout {
+    let bodyWidth: Double
     let bodyHeight: Double
+    let cameraWidth: Double
+    let pairWidth: Double
+    let primaryWidth: Double
     init(width: Double, height: Double) {
-        bodyHeight = max(height, width > height ? 360 : 580)
+        bodyWidth = max(360, width)
+        bodyHeight = max(464, height)
+        // 24 padding + 24 gaps + 64 left stick + 164 right diamond.
+        cameraWidth = bodyWidth - 276
+        pairWidth = (bodyWidth - 36) / 2
+        primaryWidth = (pairWidth - 8) / 2
     }
 }
 

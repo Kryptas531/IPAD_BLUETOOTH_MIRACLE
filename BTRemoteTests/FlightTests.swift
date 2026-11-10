@@ -62,10 +62,15 @@ struct FlightTests {
         expect(!recreated.permitsAutomaticStart(.flight, presenting: false), "root scene/BLE identity renewal preserves stored disarm")
         navigation.explicitlyRearm()
         expect(navigation.permitsAutomaticStart(.flight, presenting: false), "explicit RE-ARM enables FLIGHT")
-        for (width, height) in [(1024.0, 500.0), (700, 250), (320, 600), (320, 400)] {
+        for (width, height) in [(1024.0, 500.0), (700, 250), (320, 600), (320, 400), (360, 464), (768, 900), (1194, 700), (200, 200)] {
             let layout = FlightDeckLayout(width: width, height: height)
             expect(layout.bodyHeight >= height, "body fills allocated viewport")
-            expect(layout.bodyHeight >= (width > height ? 360 : 580), "controls have bounded nonoverlapping body budget")
+            expect(layout.bodyHeight >= 464, "top 88 + lower 288 + footer 48 + gaps 16 + padding 24 fits")
+            expect(layout.bodyWidth >= width, "narrow viewport scrolls instead of crushing buttons")
+            expect(layout.cameraWidth >= 84, "central camera remains usable")
+            expect(layout.primaryWidth >= 64, "each shoulder and trigger has large independent target")
+            expect(abs(2 * layout.pairWidth + 12 + 24 - layout.bodyWidth) < 0.001, "symmetric pairs fit width exactly")
+            expect(abs(layout.cameraWidth + 64 + 164 + 24 + 24 - layout.bodyWidth) < 0.001, "lower zones do not overlap")
         }
         var cadence = FlightCadence()
         expect(cadence.tick(now: 0), "initial tick allowed")
