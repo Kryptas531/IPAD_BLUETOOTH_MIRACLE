@@ -1471,11 +1471,14 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
 - Replace the inherited GAME button rows with a dedicated safe-area-aware flight
   deck. Keep all flight controls visible; generic keyboard/speed/debug chrome and
   its auto-hide timer must not displace flight controls. Keep an explicit exit.
-- Landscape uses left-thumb LT/RT and LB/RB clusters, a right-thumb Xbox A/B/X/Y
-  diamond, a clear central camera drag area, and separated BACK/START controls.
+- Use symmetric handheld pairs ordered left-to-right LB, LT BRAKE, RT THROTTLE,
+  RB: shoulders outermost, triggers nearer the center. L3 stays left and R3 right;
+  place the A/B/X/Y diamond lower right and preserve a central camera drag area
+  with visible horizon. Keep BACK/START separate.
   Preserve the existing Xbox mapping without claiming game-specific bindings.
 - Primary touch targets are at least 64 pt; auxiliary actions at least 44 pt.
-  Fit compact landscape and portrait without overlapping targets or scrolling;
+  Fit compact landscape and portrait without overlapping targets; on viewports below
+  the 360 pt width / 464 pt height ergonomic budget allow overflow scrolling;
   portrait explains that gyro needs landscape while buttons still work.
 - Keep RECENTER and RE-ARM visible, distinct from held gameplay buttons. Reuse
   independent momentary press/release and cancellation handling. Decorative layers
