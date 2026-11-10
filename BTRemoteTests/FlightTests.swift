@@ -19,6 +19,26 @@ struct FlightTests {
                              y: a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,
                              z: a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w)
         }
+        for (width, height) in [(1024.0, 500.0), (700, 250), (320, 600), (320, 400)] {
+            let layout = FlightDeckLayout(width: width, height: height)
+            expect(layout.bodyHeight >= height, "body fills allocated viewport")
+            expect(layout.bodyHeight >= (width > height ? 360 : 580), "controls have bounded nonoverlapping body budget")
+        }
+        var cadence = FlightCadence()
+        expect(cadence.tick(now: 0), "initial tick allowed")
+        cadence.beganSend(now: 0)
+        expect(cadence.tick(now: 0.02), "one in-flight send can await completion")
+        expect(cadence.tick(now: 0.08), "no artificial send timeout before budget")
+        expect(!cadence.tick(now: 0.101), "backpressure stops before replay")
+        cadence = FlightCadence()
+        expect(cadence.tick(now: 1), "re-arm resets cadence")
+        cadence.beganSend(now: 1)
+        expect(cadence.completedSend(now: 1.01), "timely completion accepted")
+        expect(cadence.tick(now: 1.02), "completion clears pending age")
+        expect(!cadence.tick(now: 2), "main actor stall stops instead of stale output")
+        cadence = FlightCadence()
+        cadence.beganSend(now: 3)
+        expect(!cadence.completedSend(now: 3.101), "late completion cannot hide a send stall from next tick")
         expect(FlightConfiguration.privateIPv4("192.168.1.25"), "private receiver address")
         for host in ["0.0.0.0", "8.8.8.8", "::1", "010.0.0.1", "10.0.0", "example.com"] {
             expect(!FlightConfiguration.privateIPv4(host), "reject unsafe/ambiguous host")

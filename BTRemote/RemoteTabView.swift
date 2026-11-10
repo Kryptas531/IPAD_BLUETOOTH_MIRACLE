@@ -7,6 +7,8 @@ enum RemoteMode: String {
 struct RemoteTabView: View {
     let goToSetup: () -> Void
 
+    @State private var showSettings = false
+
     @AppStorage(AppSettings.remoteModeKey) private var mode = RemoteMode.keyboard
     @AppStorage(AppSettings.liveTypingKey) private var liveTyping = true
 
@@ -26,12 +28,13 @@ struct RemoteTabView: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
             .toolbar { menu }
+            .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
     @ViewBuilder
     private var content: some View {
         switch mode {
-        case .keyboard: KeyboardView(goToSetup: goToSetup)
+        case .keyboard: KeyboardView(goToSetup: goToSetup, openSettings: { showSettings = true })
         case .remote: RemoteView(goToSetup: goToSetup)
         }
     }

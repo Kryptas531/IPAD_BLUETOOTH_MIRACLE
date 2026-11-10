@@ -1,5 +1,31 @@
 import Foundation
 
+/// Explicit gameplay budget: native views cannot enlarge the parent beyond this frame.
+struct FlightDeckLayout {
+    let bodyHeight: Double
+    init(width: Double, height: Double) {
+        bodyHeight = max(height, width > height ? 360 : 580)
+    }
+}
+
+/// A delayed callback cannot replay old deflected state. No queued sample storage.
+struct FlightCadence {
+    private var lastTick: TimeInterval?
+    private(set) var inFlightSince: TimeInterval?
+    mutating func tick(now: TimeInterval) -> Bool {
+        defer { lastTick = now }
+        if let lastTick, now - lastTick >= 0.100 { return false }
+        if let inFlightSince, now - inFlightSince >= 0.100 { return false }
+        return true
+    }
+    mutating func beganSend(now: TimeInterval) { inFlightSince = now }
+    mutating func completedSend(now: TimeInterval) -> Bool {
+        defer { inFlightSince = nil }
+        guard let inFlightSince else { return false }
+        return now - inFlightSince < 0.100
+    }
+}
+
 /// Pure FLIGHT arithmetic and wire format (SPEC §13); no BLE descriptor changes.
 enum FlightMapper {
     static func axes(from baseline: RacingQuaternion, to current: RacingQuaternion,
@@ -193,6 +219,13 @@ final class FlightSender: ObservableObject {
     private var stream = FlightStream()
     private var key: SymmetricKey?
     private var sending = false
+    private var cadence = FlightCadence()
+    private let networkQueue = DispatchQueue(label: "BTRemote.flight.network", qos: .userInteractive)
+    var beforeTick: (() -> Void)?
+    @Published private(set) var diagnostics = "No sends yet"
+    private var sentCount = 0
+    private var statsStarted: TimeInterval = 0
+    var motionAge: TimeInterval?
     private var latest = FlightState.zero
     private var buttonLatch = FlightButtonLatch()
 
@@ -222,10 +255,33 @@ final class FlightSender: ObservableObject {
                 }
             }
         }
-        conn.start(queue: .main)
+        cadence = FlightCadence()
+        sentCount = 0
+        statsStarted = ProcessInfo.processInfo.systemUptime
+        diagnostics = "Starting · no receiver ACK"
+        conn.start(queue: networkQueue)
         heartbeat = Task { [weak self] in
             while !Task.isCancelled {
-                self?.flush()
+                guard let self else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                guard self.cadence.tick(now: now) else {
+                    let age = self.cadence.inFlightSince.map { Int(max(0, now - $0) * 1000) } ?? 0
+                    self.stop()
+                    self.status = "Sender stalled — RE-ARM"
+                    self.diagnostics = "Tick/send exceeded 100 ms · pending \(age) ms"
+                    return
+                }
+                self.beforeTick?()
+                self.flush()
+                if now - self.statsStarted >= 1 {
+                    let hz = Double(self.sentCount) / (now - self.statsStarted)
+                    let age = self.cadence.inFlightSince.map { Int(max(0, now - $0) * 1000) } ?? 0
+                    let motion = self.motionAge.map { String(Int($0 * 1000)) } ?? "—"
+                    self.diagnostics = String(format: "v%@ (%@) · %.0f sends/s · pending %d ms · motion %@ ms",
+                        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
+                        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?", hz, age, motion)
+                    self.sentCount = 0; self.statsStarted = now
+                }
                 try? await Task.sleep(nanoseconds: 20_000_000)
             }
         }
@@ -246,11 +302,17 @@ final class FlightSender: ObservableObject {
         var packet = stream.next(sampled)
         packet.append(contentsOf: HMAC<SHA256>.authenticationCode(for: packet, using: key))
         sending = true
+        cadence.beganSend(now: ProcessInfo.processInfo.systemUptime)
         let generation = stream.session
         connection.send(content: packet, completion: .contentProcessed { [weak self] error in
             Task { @MainActor in
                 guard let self, self.stream.session == generation else { return }
                 self.sending = false
+                guard self.cadence.completedSend(now: ProcessInfo.processInfo.systemUptime) else {
+                    self.stop(); self.status = "Slow UDP completion — RE-ARM"
+                    return
+                }
+                if error == nil { self.sentCount += 1 }
                 if error != nil { self.stop(); self.status = "UDP send failed" }
             }
         })
@@ -258,6 +320,8 @@ final class FlightSender: ObservableObject {
 
     func stop() {
         // Best-effort release; receiver's independent 300 ms watchdog is authoritative.
+        beforeTick = nil
+        motionAge = nil
         latest = .zero
         buttonLatch = FlightButtonLatch()
         flush()
@@ -275,7 +339,12 @@ final class FlightSender: ObservableObject {
 
 struct FlightStatusView: View {
     @ObservedObject var sender: FlightSender
-    var body: some View { Text(sender.status).font(.caption2) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(sender.status)
+            Text(sender.diagnostics)
+        }.font(.caption2)
+    }
 }
 
 struct FlightSettingsView: View {

@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 
 /// SPEC §13.2: dedicated handheld deck; all input still uses the existing controller.
 struct FlightDeckView: View {
@@ -15,10 +16,10 @@ struct FlightDeckView: View {
             let compact = geometry.size.height < 540
             let side = min(280.0, max(160.0, geometry.size.width * 0.27))
             let key = compact ? 64.0 : 76.0
+            let layout = FlightDeckLayout(width: Double(geometry.size.width), height: Double(geometry.size.height))
             ZStack {
                 Color(red: 0.035, green: 0.055, blue: 0.08).allowsHitTesting(false)
                 VStack(spacing: compact ? 8 : 16) {
-                    header
                     if landscape {
                         HStack(spacing: 12) {
                             throttleCluster(compact: compact).frame(width: side)
@@ -41,27 +42,30 @@ struct FlightDeckView: View {
                 }
                 .padding(compact ? 12 : 20)
             }
+            .frame(width: geometry.size.width, height: CGFloat(layout.bodyHeight))
+            .modifier(FlightBodyViewport(scrolls: layout.bodyHeight > Double(geometry.size.height)))
             .foregroundColor(.white)
-            .background(FlightOrientationReader(onChange: gyro.updateFlightOrientation))
+            .background(FlightOrientationReader(onChange: gyro.updateFlightOrientation).allowsHitTesting(false))
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            header.padding(.horizontal, 12).padding(.vertical, 4)
+                .background(Color(red: 0.035, green: 0.055, blue: 0.08))
+                .zIndex(100)
         }
     }
 
     private var header: some View {
         HStack(spacing: 12) {
-            Button(action: exit) {
-                Label("EXIT", systemImage: "chevron.left").font(.caption.bold())
-                    .frame(minWidth: 64, minHeight: 44)
-            }.accessibilityLabel("Exit flight deck")
+            FlightNavigationButton(title: "EXIT", action: exit)
+                .frame(width: 80, height: 48)
             VStack(alignment: .leading, spacing: 3) {
                 Text("FLIGHT").font(.system(.headline, design: .rounded)).tracking(3)
                 FlightStatusView(sender: gyro.flightSender)
                     .foregroundColor(.white.opacity(0.65)).lineLimit(2)
             }
-            Spacer(minLength: 0)
-            Button(action: settings) {
-                Label("SETTINGS", systemImage: "gearshape").font(.caption.bold())
-                    .frame(minWidth: 80, minHeight: 44)
-            }.accessibilityLabel("Flight connection settings")
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            FlightNavigationButton(title: "SETTINGS", action: settings)
+                .frame(width: 104, height: 48)
         }
         .buttonStyle(.plain)
     }
@@ -102,6 +106,7 @@ struct FlightDeckView: View {
             onTouchEnded: { gyro.endRacingTouch() }
         )
         .overlay(cameraGuide(landscape: landscape).allowsHitTesting(false))
+        .contentShape(Rectangle())
         .clipped()
     }
 
@@ -173,6 +178,34 @@ struct FlightDeckView: View {
             background: { plate(color) },
             label: { legend(title, detail: detail, color: color) }
         ).accessibilityLabel("\(title) \(detail)")
+    }
+}
+/// Do not install a scroll recognizer over normal simultaneous gameplay touches.
+private struct FlightBodyViewport: ViewModifier {
+    let scrolls: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if scrolls {
+            ScrollView(.vertical) { content }
+        } else {
+            content
+        }
+    }
+}
+
+/// A native control owns its touches independently of gameplay SwiftUI gestures.
+private struct FlightNavigationButton: UIViewRepresentable {
+    let title: String
+    let action: () -> Void
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = .boldSystemFont(ofSize: 13)
+        button.accessibilityLabel = title == "EXIT" ? "Exit flight deck" : "Flight connection settings"
+        return button
+    }
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.removeAction(identifiedBy: UIAction.Identifier("navigate"), for: .touchUpInside)
+        button.addAction(UIAction(identifier: UIAction.Identifier("navigate")) { _ in action() }, for: .touchUpInside)
     }
 }
 #endif

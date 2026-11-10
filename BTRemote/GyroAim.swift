@@ -227,7 +227,6 @@ struct RacingSourceState: Sendable {
         private var flight = FlightState.zero
         private var flightOrigin: CGPoint?
         private var motionGeneration = UUID()
-        private var flightMotion: Task<Void, Never>?
         private var flightLandscapeRight: Bool?
         private var flightReleaseGate = FlightReleaseGate()
 
@@ -295,22 +294,19 @@ struct RacingSourceState: Sendable {
                 manager.deviceMotionUpdateInterval = 0.020
                 manager.startDeviceMotionUpdates(using: .xArbitraryZVertical)
                 let started = ProcessInfo.processInfo.systemUptime
-                flightMotion = Task { [weak self] in
-                    while !Task.isCancelled {
-                        guard let self, self.motionGeneration == generation else { return }
-                        let now = ProcessInfo.processInfo.systemUptime
-                        let motion = self.manager.deviceMotion
-                        guard now - started < 0.300 ||
-                            now - (motion?.timestamp ?? started) < 0.300 else {
-                            self.stop() // stalled motion must not leave deflected axes live
-                            return
-                        }
-                        // A previous session's cached sample cannot establish baseline.
-                        if let motion, motion.timestamp >= started {
-                            let q = motion.attitude.quaternion
-                            self.handle(RacingQuaternion(w: q.w, x: q.x, y: q.y, z: q.z))
-                        }
-                        try? await Task.sleep(nanoseconds: 20_000_000)
+                flightSender.beforeTick = { [weak self] in
+                    guard let self, self.motionGeneration == generation else { return }
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let motion = self.manager.deviceMotion
+                    self.flightSender.motionAge = motion.map { max(0, now - $0.timestamp) }
+                    guard now - started < 0.300 ||
+                        now - (motion?.timestamp ?? started) < 0.300 else {
+                        self.stop()
+                        return
+                    }
+                    if let motion, motion.timestamp >= started {
+                        let q = motion.attitude.quaternion
+                        self.handle(RacingQuaternion(w: q.w, x: q.x, y: q.y, z: q.z))
                     }
                 }
                 isAvailable = true
@@ -343,8 +339,7 @@ struct RacingSourceState: Sendable {
             // SPEC §5.2 L: stop the motion source first, so no sample that is still in
             // flight can write a steering axis after the neutralizing report was sent.
             isRunning = false
-            flightMotion?.cancel()
-            flightMotion = nil
+            flightSender.beforeTick = nil
             motionGeneration = UUID()
             manager.stopDeviceMotionUpdates()
             neutralizeFlight()

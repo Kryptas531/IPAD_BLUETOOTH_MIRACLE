@@ -46,7 +46,7 @@ enum AppSurface {
 
 struct KeyboardView: View {
     let goToSetup: () -> Void
-    var openSettings: () -> Void = {}
+    var openSettings: () -> Void
 
     @Environment(\.hid) private var hid
     @AppStorage(AppSettings.developerModeKey) private var developerMode = false
@@ -666,7 +666,7 @@ struct KeyboardView: View {
                         .buttonStyle(.bordered)
                 }.frame(height: 44)
             }
-            .background(FlightOrientationReader(onChange: gyro.updateFlightOrientation))
+            .background(FlightOrientationReader(onChange: gyro.updateFlightOrientation).allowsHitTesting(false))
         }
 
         private func flightButton(_ label: String, _ bit: UInt16) -> some View {
@@ -1370,7 +1370,7 @@ private final class KeyTypist: ObservableObject {
 
 #if DEBUG
     #Preview {
-        KeyboardView(goToSetup: {})
+        KeyboardView(goToSetup: {}, openSettings: {})
             .environmentObject(DirectInputController())
     }
 #endif
