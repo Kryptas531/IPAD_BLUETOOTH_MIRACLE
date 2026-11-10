@@ -19,6 +19,19 @@ struct FlightTests {
                              y: a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,
                              z: a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w)
         }
+        var navigation = GameNavigationPolicy()
+        expect(navigation.permitsAutomaticStart(.flight, presenting: false), "initial FLIGHT behavior preserved")
+        navigation.present()
+        for mode in [GameInputMode.touch, .gyro, .hybrid, .racing, .flight] {
+            expect(!navigation.permitsAutomaticStart(mode, presenting: true), "menu presentation prevents motion restart")
+        }
+        for _ in 0..<3 {
+            expect(!navigation.permitsAutomaticStart(.flight, presenting: false), "dismiss/scene/configure cannot re-arm FLIGHT")
+            expect(navigation.permitsAutomaticStart(.touch, presenting: false), "other selected GAME modes remain available")
+            navigation.present()
+        }
+        navigation.explicitlyRearm()
+        expect(navigation.permitsAutomaticStart(.flight, presenting: false), "explicit RE-ARM enables FLIGHT")
         for (width, height) in [(1024.0, 500.0), (700, 250), (320, 600), (320, 400)] {
             let layout = FlightDeckLayout(width: width, height: height)
             expect(layout.bodyHeight >= height, "body fills allocated viewport")

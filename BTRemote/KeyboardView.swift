@@ -68,6 +68,9 @@ struct KeyboardView: View {
         /// token, so an old view's unregister cannot clear the new session's callback.
         var registerPCRelease: (((() -> Void)?) -> Void)? = nil
     #endif
+    @State private var pendingGameSettings = false
+    @State private var showGameMenu = false
+    @State private var gameNavigation = GameNavigationPolicy()
     @State private var text = ""
     @State private var sent = ""
     @State private var resetting = false
@@ -84,7 +87,7 @@ struct KeyboardView: View {
     private var flightSelected: Bool { gameInputMode == .flight }
 
     var body: some View {
-        if hid.isActive || developerMode || flightSelected {
+        if hid.isActive || developerMode || flightSelected || padMode == .game {
             editor
         } else {
             VStack {
@@ -104,13 +107,10 @@ struct KeyboardView: View {
         GeometryReader { geo in
             if padMode == .game && flightSelected {
                 #if os(iOS)
-                FlightDeckView(gyro: gyro, exit: {
-                    releasePCInput()
-                    padMode = .control
-                }, settings: {
-                    releasePCInput()
-                    openSettings()
-                })
+                FlightDeckView(gyro: gyro, gameMenu: presentGameMenu, rearm: {
+                    gameNavigation.explicitlyRearm()
+                    gyro.reconnectFlight()
+                }, settings: presentAppSettings)
                 #else
                 Text("FLIGHT requires iPad")
                 #endif
@@ -277,6 +277,26 @@ struct KeyboardView: View {
             }
         }
         .padding()
+        #if os(iOS)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if padMode == .game && !flightSelected {
+                HStack {
+                    FlightNavigationButton(title: "GAME MENU", action: presentGameMenu)
+                        .frame(width: 120, height: 48)
+                    Spacer()
+                    Text("Other GAME modes require Bluetooth").font(.caption)
+                }.padding(.horizontal, 12).background(.thinMaterial)
+            }
+        }
+        .sheet(isPresented: $showGameMenu, onDismiss: {
+            if pendingGameSettings {
+                pendingGameSettings = false
+                presentAppSettings()
+            } else {
+                configureGyro()
+            }
+        }) { gameMenuSheet }
+        #endif
         .onChange(of: liveTyping) { _ in clear() }
         .task(id: padMode) {
             gameChromeVisible = true
@@ -553,6 +573,62 @@ struct KeyboardView: View {
             gyro.sensitivity = gyroSensitivity
         }
 
+        @MainActor private func presentGameMenu() {
+            gameNavigation.present()
+            gyro.suspendFlightForNavigation()
+            releasePCInput()
+            showGameMenu = true
+        }
+
+        @MainActor private func presentAppSettings() {
+            gameNavigation.present()
+            gyro.suspendFlightForNavigation()
+            releasePCInput()
+            openSettings()
+        }
+
+        private var gameMenuSheet: some View {
+            NavigationView {
+                List {
+                    Section(header: Text("GAME input mode"), footer: Text("TOUCH, GYRO, HYBRID and RACING use Bluetooth. FLIGHT uses Wi-Fi and stays stopped until RE-ARM. These choices do not open the game's own menu.")) {
+                        ForEach([GameInputMode.touch, .gyro, .hybrid, .racing, .flight], id: \.rawValue) { mode in
+                            Button {
+                                releasePCInput()
+                                gameInputMode = mode
+                                padMode = .game
+                                showGameMenu = false
+                            } label: {
+                                HStack {
+                                    Text(mode.rawValue.uppercased())
+                                    Spacer()
+                                    if gameInputMode == mode { Image(systemName: "checkmark") }
+                                }
+                            }
+                        }
+                    }
+                    Section(header: Text("App navigation")) {
+                        Button("Return to CONTROL") {
+                            releasePCInput()
+                            padMode = .control
+                            showGameMenu = false
+                        }
+                        Button("App settings") {
+                            releasePCInput()
+                            showGameMenu = false
+                            pendingGameSettings = true
+                        }
+                    }
+                }
+                .navigationTitle("GAME menu")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { showGameMenu = false }
+                    }
+                }
+            }.navigationViewStyle(.stack)
+        }
+
         /// Wire the gyro source to the existing relative-mouse report path and start or stop
         /// it according to the selected GAME input source (SPEC §5.1 B/G). SPEC §5.2 G/H:
         /// RACING reuses the same single motion pipeline with the absolute baseline
@@ -567,7 +643,8 @@ struct KeyboardView: View {
             // Neutralize the old destination before changing routing.
             gyro.stop()
             gyro.mode = gameInputMode
-            guard padMode == .game else {
+            guard padMode == .game,
+                  gameNavigation.permitsAutomaticStart(gameInputMode, presenting: showGameMenu) else {
                 gyro.stop()
                 return
             }

@@ -5,7 +5,8 @@ import UIKit
 /// SPEC §13.2: dedicated handheld deck; all input still uses the existing controller.
 struct FlightDeckView: View {
     @ObservedObject var gyro: GyroAimController
-    let exit: () -> Void
+    let gameMenu: () -> Void
+    let rearm: () -> Void
     let settings: () -> Void
 
     private let cyan = Color(red: 0.28, green: 0.82, blue: 0.94)
@@ -56,15 +57,15 @@ struct FlightDeckView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            FlightNavigationButton(title: "EXIT", action: exit)
-                .frame(width: 80, height: 48)
+            FlightNavigationButton(title: "GAME MENU", action: gameMenu)
+                .frame(width: 100, height: 48)
             VStack(alignment: .leading, spacing: 3) {
                 Text("FLIGHT").font(.system(.headline, design: .rounded)).tracking(3)
                 FlightStatusView(sender: gyro.flightSender)
                     .foregroundColor(.white.opacity(0.65)).lineLimit(2)
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            FlightNavigationButton(title: "SETTINGS", action: settings)
+            FlightNavigationButton(title: "APP SETTINGS", action: settings)
                 .frame(width: 104, height: 48)
         }
         .buttonStyle(.plain)
@@ -134,13 +135,13 @@ struct FlightDeckView: View {
                 .font(.system(.caption, design: .rounded).weight(.bold))
                 .frame(minWidth: 90, minHeight: 48)
                 .background(cyan.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
-            Button("RE-ARM") { gyro.reconnectFlight() }
+            Button("RE-ARM", action: rearm)
                 .font(.system(.caption, design: .rounded).weight(.semibold))
                 .frame(minWidth: 72, minHeight: 48)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityLabel("Reconnect and re-arm receiver")
             Spacer(minLength: 0)
-            input("START", color: .gray, bit: 128).frame(width: 64, height: 48)
+            input("OPTIONS", detail: "START", color: .gray, bit: 128).frame(width: 64, height: 48)
         }
         .buttonStyle(.plain)
     }
@@ -193,14 +194,14 @@ private struct FlightBodyViewport: ViewModifier {
 }
 
 /// A native control owns its touches independently of gameplay SwiftUI gestures.
-private struct FlightNavigationButton: UIViewRepresentable {
+struct FlightNavigationButton: UIViewRepresentable {
     let title: String
     let action: () -> Void
     func makeUIView(context: Context) -> UIButton {
         let button = UIButton(type: .system)
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .boldSystemFont(ofSize: 13)
-        button.accessibilityLabel = title == "EXIT" ? "Exit flight deck" : "Flight connection settings"
+        button.accessibilityLabel = title == "GAME MENU" ? "GAME modes and navigation" : title
         return button
     }
     func updateUIView(_ button: UIButton, context: Context) {

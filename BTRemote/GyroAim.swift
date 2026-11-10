@@ -237,6 +237,13 @@ struct RacingSourceState: Sendable {
             if mode == .flight { recenter() }
         }
 
+        func suspendFlightForNavigation() {
+            if mode == .flight {
+                flightReleaseGate.rearm(held: flight, dragging: flightOrigin != nil)
+            }
+            stop()
+        }
+
         func reconnectFlight() {
             guard mode == .flight else { return }
             flightReleaseGate.rearm(held: flight, dragging: flightOrigin != nil)

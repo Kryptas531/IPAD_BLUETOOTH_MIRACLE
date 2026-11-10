@@ -1,5 +1,15 @@
 import Foundation
 
+/// Navigation disarms FLIGHT until an explicit action, independent of persisted mode.
+struct GameNavigationPolicy {
+    private(set) var flightNeedsRearm = false
+    mutating func present() { flightNeedsRearm = true }
+    mutating func explicitlyRearm() { flightNeedsRearm = false }
+    func permitsAutomaticStart(_ mode: GameInputMode, presenting: Bool) -> Bool {
+        !presenting && (mode != .flight || !flightNeedsRearm)
+    }
+}
+
 /// Explicit gameplay budget: native views cannot enlarge the parent beyond this frame.
 struct FlightDeckLayout {
     let bodyHeight: Double
