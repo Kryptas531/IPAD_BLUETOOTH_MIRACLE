@@ -1569,3 +1569,19 @@ resolution and TV-side TorrServer management endpoint remain physical acceptance
 - Verify navigation/disarm policy across mode changes with dependency-free tests,
   compile in unsigned CI and record exact IPA SHA/version; physical touch acceptance
   remains required. Deliver as 0.0.9 (9).
+
+### 13.5 FLIGHT calibrated cockpit background
+FLIGHT alone displays a dark full-viewport artificial horizon behind controls:
+pitch ladder, bank scale and fixed aircraft reference. It depicts recentered device
+rotation, not aircraft telemetry or absolute physical attitude. Raw angular mapping
+shares the exact quaternion reference and landscape handedness of FlightMapper,
+before stick deadzone/saturation. RECENTER resets both together.
+Use the existing motion samples only; isolated HUD publication is capped at 25 Hz,
+without animation queues, extra sensors, timers or network work. Stop, unavailable
+motion, portrait/unknown orientation and recenter pending show a muted unavailable
+instrument, never stale moving data. Drawing is clipped, noninteractive and
+accessibility hidden. Preserve native header contrast, navigation and all input.
+Version 0.0.10 (10) uses project.yml variables; protected files remain unchanged.
+Acceptance: deterministic raw-angle/sign, reference reset, finite/bounded display,
+publication cadence and unavailable tests; Swift 6 CI and iOS build. Physical
+readability and motion feel remain device acceptance.
