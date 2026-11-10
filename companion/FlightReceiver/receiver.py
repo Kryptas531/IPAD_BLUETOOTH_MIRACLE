@@ -5,6 +5,7 @@ import argparse
 import hmac
 import ipaddress
 import secrets
+import select
 import socket
 import struct
 import time
@@ -44,7 +45,7 @@ def decode(packet: bytes, key: bytes):
     if not hmac.compare_digest(hmac.digest(key, body, "sha256"), signature):
         return None
     magic, session, seq, buttons, lx, ly, rx, ry, lt, rt = WIRE.unpack(body)
-    if magic != b"IGP1" or not seq or buttons & ~0xff or -128 in (lx, ly, rx, ry):
+    if magic != b"IGP1" or not seq or buttons & ~0x3ff or -128 in (lx, ly, rx, ry):
         return None
     return session, seq, State(buttons, lx, ly, rx, ry, lt, rt)
 
@@ -110,6 +111,35 @@ class Controller:
         self.output(state)
         return True
 
+    def receive_batch(self, packets, clock=time.monotonic):
+        """Coalesce only analog runs; authenticate every datagram before output.
+
+        Keep digital edges and explicit neutral boundaries in order. A bounded
+        socket drain prevents an always-readable socket from starving watchdogs.
+        IGP1 sequences reject replay, not network age (there is no wire clock).
+        """
+        publish = self.output
+        pending = []
+
+        def collect(state):
+            digital = lambda value: (value.buttons, value.lt, value.rt)
+            if (pending and pending[-1] != ZERO and state != ZERO
+                    and digital(pending[-1]) == digital(state)):
+                pending[-1] = state
+            else:
+                pending.append(state)
+
+        self.output = collect
+        try:
+            for packet, peer in packets:
+                self.receive(packet, peer, clock())
+        finally:
+            self.output = publish
+        for state in pending:
+            publish(state)
+        # Backend work can block; do not reuse the pre-output receive timestamp.
+        self.expire(clock())
+
     def close(self):
         self.output(ZERO)
         self.state = ZERO
@@ -141,6 +171,8 @@ class Xbox:
             vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER,
             vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER,
             vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK, vg.XUSB_BUTTON.XUSB_GAMEPAD_START,
+            vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB,
+            vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB,
         ]
 
     def __call__(self, state: State):
@@ -202,7 +234,12 @@ def main():
             while True:
                 try:
                     packet, peer = sock.recvfrom(1024)
-                    controller.receive(packet, peer, time.monotonic())
+                    packets = [(packet, peer)]
+                    # Never replay a long axis history one backend update at a time.
+                    # Limit work even under unauthenticated continuous traffic.
+                    while len(packets) < 64 and select.select([sock], [], [], 0)[0]:
+                        packets.append(sock.recvfrom(1024))
+                    controller.receive_batch(packets)
                 except socket.timeout:
                     pass
                 controller.expire(time.monotonic())

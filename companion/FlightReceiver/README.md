@@ -96,7 +96,8 @@ implemented. The intended device identity here is Xbox 360/XInput.
 Protocol: 68 bytes: `IGP1` + 16-byte session UUID + big-endian uint64 sequence +
 big-endian uint16 buttons + LX/LY/RX/RY signed bytes + LT/RT unsigned bytes +
 32-byte HMAC-SHA256 over the first 36 bytes. Axis range -127…127; buttons bits
-0–7 = A,B,X,Y,LB,RB,BACK,START. The key is never transmitted. No encryption is
+0–9 = A,B,X,Y,LB,RB,BACK,START,L3,R3. Bits above 9 are rejected.
+Deploy the updated iPad and receiver together: older receivers reject L3/R3 packets. The key is never transmitted. No encryption is
 provided: packets reveal controller state, but cannot be modified/forged without
 the key. This is a local trusted-LAN design, not an Internet remote-control server.
 
@@ -135,3 +136,29 @@ An injected vgamepad API verifies every output field and button mapping without
 a driver; that is not a Windows driver integration test. The macOS unsigned IPA
 workflow also compiles the production Swift gyro/packet arithmetic and runs
 `BTRemoteTests/FlightTests.swift` before building the app.
+
+## Responsiveness correction (SPEC ad22775 / e0628e9)
+
+Short touches previously could disappear twice: SwiftUI GestureState changes can
+coalesce before rendering, and a down/up between 50 Hz sender ticks overwrote the
+single latest snapshot. PressGesture now delivers the press directly from the
+gesture callback; a per-button latch preserves a minimum 80 ms from its first
+transmitted frame (including L3/R3), independently of axes and other releases.
+Stop/re-arm clears the latch. START is XInput START (Options), BACK is XInput BACK;
+neither is an app-navigation action.
+
+EXIT and SETTINGS are labeled app actions; settings stops gameplay and requires
+RE-ARM afterwards. Camera touches are scoped to the central surface, away from
+header/footer controls. FLIGHT pulls latest CoreMotion at 50 Hz rather than
+creating a MainActor task per sensor callback, and stale motion stops the sender.
+The receiver drains at most 64 ready packets per iteration and coalesces analog
+runs without dropping digital edges or explicit neutral boundaries. Output work
+is followed by a fresh-clock watchdog check. Avoid synchronous per-packet disk
+logging in deployment wrappers: it is outside this receiver's latency budget.
+
+IGP1 has no sender timestamp. Sequence checks prove ordering, not packet age;
+network-buffered old input and edges delivered together can still be visible too
+briefly to a polling game. These checks do not establish end-to-end latency or
+streaming-service controller forwarding. Verify short START/BACK/L3/R3 taps,
+simultaneous holds/releases, portrait/landscape app navigation and settings/re-arm
+on the actual iPad/Windows/game path after matching deployment.

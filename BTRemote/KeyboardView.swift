@@ -104,7 +104,13 @@ struct KeyboardView: View {
         GeometryReader { geo in
             if padMode == .game && flightSelected {
                 #if os(iOS)
-                FlightDeckView(gyro: gyro, exit: { padMode = .control }, settings: openSettings)
+                FlightDeckView(gyro: gyro, exit: {
+                    releasePCInput()
+                    padMode = .control
+                }, settings: {
+                    releasePCInput()
+                    openSettings()
+                })
                 #else
                 Text("FLIGHT requires iPad")
                 #endif
@@ -654,6 +660,8 @@ struct KeyboardView: View {
                     flightButton("RB", 32)
                     flightButton("BACK", 64)
                     flightButton("START", 128)
+                    flightButton("L3", 256)
+                    flightButton("R3", 512)
                     Button("RECENTER") { gyro.recenter() }
                         .buttonStyle(.bordered)
                 }.frame(height: 44)

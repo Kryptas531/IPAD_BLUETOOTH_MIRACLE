@@ -38,11 +38,19 @@ class ReceiverTests(unittest.TestCase):
         self.assertIsNone(self.receiver.owner)
 
     def test_authenticated_malformed_fields_rejected(self):
-        for state, seq in [(State(buttons=256), 1), (State(lx=-128), 1), (ZERO, 0)]:
+        for state, seq in [(State(buttons=1024), 1), (State(lx=-128), 1), (ZERO, 0)]:
             self.assertIsNone(decode(encode(KEY, SESSION, seq, state), KEY))
         raw = bytearray(encode(KEY, SESSION, 1, ZERO)[:36])
         raw[:4] = b"BAD!"
         self.assertIsNone(decode(bytes(raw) + hmac.digest(KEY, raw, "sha256"), KEY))
+
+    def test_stick_click_wire_and_independent_release(self):
+        self.send()
+        for seq, bitmap in enumerate([256, 768, 512, 0], start=2):
+            self.assertTrue(self.send(State(buttons=bitmap), seq, seq * .01))
+            self.assertEqual(self.outputs[-1].buttons, bitmap)
+        for bit in range(10, 16):
+            self.assertIsNone(decode(encode(KEY, SESSION, 8, State(buttons=1 << bit)), KEY))
 
     def test_initial_neutral_required(self):
         self.assertFalse(self.send(State(rt=255)))
@@ -185,12 +193,66 @@ class ReceiverTests(unittest.TestCase):
         self.assertTrue(self.send(State(lx=-127), 31, .64, fresh))
         self.assertFalse(self.send(ZERO, 999, 1.0))
 
+    def test_batch_coalesces_axes_but_preserves_menu_edges_and_neutral(self):
+        states = [ZERO, State(lx=10), State(lx=20),
+                  State(buttons=64), State(buttons=64, lx=40),
+                  State(buttons=192), State(buttons=128), ZERO]
+        packets = [(encode(KEY, SESSION, i + 1, state), PEER)
+                   for i, state in enumerate(states)]
+        self.outputs.clear()
+        self.receiver.receive_batch(packets, clock=lambda: .01)
+        self.assertEqual(self.outputs, [ZERO, State(lx=20),
+                         State(buttons=64, lx=40), State(buttons=192),
+                         State(buttons=128), ZERO])
+
+    def test_batch_authentication_and_sequence_still_guard_latest_state(self):
+        self.send()
+        packets = [(encode(KEY, SESSION, 3, State(lx=30)), PEER),
+                   (encode(KEY, SESSION, 2, State(lx=-127)), PEER),
+                   (encode(b'x' * 32, SESSION, 4, ZERO), PEER)]
+        self.receiver.receive_batch(packets, clock=lambda: .02)
+        self.assertEqual(self.receiver.sequence, 3)
+        self.assertEqual(self.outputs[-1], State(lx=30))
+
+    def test_watchdog_uses_fresh_time_after_slow_backend(self):
+        now = [0.0]
+        outputs = []
+        def slow_output(state):
+            outputs.append(state)
+            now[0] += .4
+        receiver = Controller(KEY, slow_output)
+        receiver.receive_batch([(encode(KEY, SESSION, 1, ZERO), PEER),
+                                (encode(KEY, SESSION, 2, State(buttons=128)), PEER)],
+                               clock=lambda: now[0])
+        self.assertEqual(outputs[-1], ZERO)
+        self.assertIsNone(receiver.last_seen)
+
+    def test_xinput_menu_buttons_are_not_face_buttons(self):
+        calls = []
+        class Pad:
+            def __getattr__(self, name):
+                return lambda **kwargs: calls.append((name, kwargs))
+        names = ["A", "B", "X", "Y", "LEFT_SHOULDER", "RIGHT_SHOULDER", "BACK", "START", "LEFT_THUMB", "RIGHT_THUMB"]
+        fake = types.SimpleNamespace(VX360Gamepad=Pad, XUSB_BUTTON=types.SimpleNamespace(
+            **{"XUSB_GAMEPAD_" + n: n for n in names}))
+        with patch.dict(sys.modules, {"vgamepad": fake}), patch("receiver.time.sleep"):
+            backend = Xbox()
+            for bitmap, expected in [(64, ["BACK"]), (128, ["START"]),
+                                     (192, ["BACK", "START"]),
+                                     (256, ["LEFT_THUMB"]), (512, ["RIGHT_THUMB"]),
+                                     (768, ["LEFT_THUMB", "RIGHT_THUMB"]),
+                                     (512, ["RIGHT_THUMB"]), (0, [])]:
+                calls.clear()
+                backend(State(buttons=bitmap))
+                self.assertEqual([kw["button"] for name, kw in calls
+                                  if name == "press_button"], expected)
+
     def test_xinput_backend_all_fields_and_button_order(self):
         calls = []
         class Pad:
             def __getattr__(self, name):
                 return lambda **kwargs: calls.append((name, kwargs))
-        names = ["A", "B", "X", "Y", "LEFT_SHOULDER", "RIGHT_SHOULDER", "BACK", "START"]
+        names = ["A", "B", "X", "Y", "LEFT_SHOULDER", "RIGHT_SHOULDER", "BACK", "START", "LEFT_THUMB", "RIGHT_THUMB"]
         buttons = types.SimpleNamespace(**{"XUSB_GAMEPAD_" + n: n for n in names})
         fake = types.SimpleNamespace(VX360Gamepad=Pad, XUSB_BUTTON=buttons)
         with patch.dict(sys.modules, {"vgamepad": fake}):
@@ -199,7 +261,7 @@ class ReceiverTests(unittest.TestCase):
                 ("left_joystick_float", {"x_value_float": 1 / 32767, "y_value_float": 0}),
                 ("update", {}), ("reset", {}), ("update", {})])
             calls.clear()
-            backend(State(255, -127, 127, 127, -127, 255, 128))
+            backend(State(1023, -127, 127, 127, -127, 255, 128))
             self.assertEqual([kwargs["button"] for name, kwargs in calls
                               if name == "press_button"], names)
             self.assertIn(("left_joystick_float", {"x_value_float": -1, "y_value_float": 1}), calls)

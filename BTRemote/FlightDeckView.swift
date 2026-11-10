@@ -12,29 +12,23 @@ struct FlightDeckView: View {
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
-            let compact = geometry.size.height < 430
+            let compact = geometry.size.height < 540
             let side = min(280.0, max(160.0, geometry.size.width * 0.27))
             let key = compact ? 64.0 : 76.0
             ZStack {
                 Color(red: 0.035, green: 0.055, blue: 0.08).allowsHitTesting(false)
-                RacingSurfaceView(
-                    onTouchBegan: { gyro.beginRacingTouch(at: $0) },
-                    onTouchMoved: { gyro.moveRacingTouch(to: $0) },
-                    onTouchEnded: { gyro.endRacingTouch() }
-                )
                 VStack(spacing: compact ? 8 : 16) {
                     header
                     if landscape {
                         HStack(spacing: 12) {
                             throttleCluster(compact: compact).frame(width: side)
-                            cameraGuide(landscape: true)
+                            cameraSurface(landscape: true)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .allowsHitTesting(false)
                             faceCluster(key: key).frame(width: side)
                         }
                         .frame(maxHeight: .infinity)
                     } else {
-                        cameraGuide(landscape: false).allowsHitTesting(false)
+                        cameraSurface(landscape: false).frame(maxHeight: .infinity)
                         Spacer(minLength: 0)
                         HStack(spacing: 12) {
                             throttleCluster(compact: true)
@@ -55,7 +49,8 @@ struct FlightDeckView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button(action: exit) {
-                Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                Label("EXIT", systemImage: "chevron.left").font(.caption.bold())
+                    .frame(minWidth: 64, minHeight: 44)
             }.accessibilityLabel("Exit flight deck")
             VStack(alignment: .leading, spacing: 3) {
                 Text("FLIGHT").font(.system(.headline, design: .rounded)).tracking(3)
@@ -64,22 +59,27 @@ struct FlightDeckView: View {
             }
             Spacer(minLength: 0)
             Button(action: settings) {
-                Image(systemName: "gearshape").frame(width: 44, height: 44)
+                Label("SETTINGS", systemImage: "gearshape").font(.caption.bold())
+                    .frame(minWidth: 80, minHeight: 44)
             }.accessibilityLabel("Flight connection settings")
         }
         .buttonStyle(.plain)
     }
 
     private func throttleCluster(compact: Bool) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: compact ? 6 : 12) {
             HStack(spacing: 12) {
                 input("LB", detail: "LEFT", color: cyan, bit: 16)
                 input("RB", detail: "RIGHT", color: cyan, bit: 32)
             }.frame(height: 64)
-            trigger("RT", detail: "THROTTLE", trigger: .gas, color: cyan)
-                .frame(height: compact ? 72 : 104)
-            trigger("LT", detail: "BRAKE", trigger: .brake, color: .orange)
-                .frame(height: compact ? 64 : 88)
+            HStack(spacing: 12) {
+                trigger("LT", detail: "BRAKE", trigger: .brake, color: .orange)
+                trigger("RT", detail: "THROTTLE", trigger: .gas, color: cyan)
+            }.frame(height: compact ? 64 : 104)
+            HStack(spacing: 12) {
+                input("L3", detail: "STICK CLICK", color: cyan, bit: 256)
+                input("R3", detail: "STICK CLICK", color: cyan, bit: 512)
+            }.frame(height: 64)
         }
         .frame(maxWidth: 280)
     }
@@ -93,6 +93,16 @@ struct FlightDeckView: View {
             }
             input("A", color: .green, bit: 1).frame(width: key, height: key)
         }
+    }
+
+    private func cameraSurface(landscape: Bool) -> some View {
+        RacingSurfaceView(
+            onTouchBegan: { gyro.beginRacingTouch(at: $0) },
+            onTouchMoved: { gyro.moveRacingTouch(to: $0) },
+            onTouchEnded: { gyro.endRacingTouch() }
+        )
+        .overlay(cameraGuide(landscape: landscape).allowsHitTesting(false))
+        .clipped()
     }
 
     private func cameraGuide(landscape: Bool) -> some View {

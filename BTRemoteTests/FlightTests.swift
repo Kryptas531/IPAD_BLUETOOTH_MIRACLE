@@ -74,6 +74,41 @@ struct FlightTests {
         state = .zero
         expect(state.payload(session: uuid, sequence: 1).suffix(8) == Data(repeating: 0, count: 8),
                "neutral report clears all controls")
+        for bit in [UInt16(1), 2, 4, 8, 16, 32, 64, 128, 256, 512] {
+            var latch = FlightButtonLatch()
+            latch.update(bit)
+            latch.update(0) // entire touch can occur between heartbeat ticks
+            expect(latch.sample(now: 10) == bit, "short tap reaches first frame")
+            expect(latch.sample(now: 10.079) == bit, "tap lasts at least 80 ms")
+            expect(latch.sample(now: 10.081) == 0, "released tap expires")
+        }
+        var menu = FlightButtonLatch()
+        menu.update(192)
+        expect(menu.sample(now: 0) == 192, "START and BACK held independently")
+        menu.update(128)
+        expect(menu.sample(now: 0.081) == 128, "BACK release leaves START held")
+        menu.update(0)
+        expect(menu.sample(now: 0.082) == 0, "long press releases without extra delay")
+        menu.update(64)
+        menu = FlightButtonLatch()
+        expect(menu.sample(now: 1) == 0, "stop/re-arm discards pending taps")
+        var clicks = FlightState.zero
+        clicks.setButton(256, pressed: true)
+        clicks.setButton(512, pressed: true)
+        expect(clicks.buttons == 768, "both stick clicks independent of other buttons")
+        expect(clicks.payload(session: uuid, sequence: 1)[28] == 3,
+               "stick clicks occupy high wire byte")
+        clicks.setButton(256, pressed: false)
+        expect(clicks.buttons == 512, "releasing L3 keeps R3 held")
+        clicks.setButton(512, pressed: false)
+        expect(clicks.buttons == 0, "both clicks released")
+        var clickGate = FlightReleaseGate()
+        clickGate.rearm(held: FlightState(buttons: 768), dragging: false)
+        expect(!clickGate.button(256, pressed: true) && !clickGate.button(512, pressed: true),
+               "both held stick clicks blocked by re-arm")
+        expect(clickGate.button(256, pressed: false) && clickGate.button(256, pressed: true),
+               "L3 release then press re-arms independently")
+        expect(!clickGate.button(512, pressed: true), "R3 still blocked")
         let heldInput = FlightState(buttons: 3, lx: 127, ly: -127,
                                     rx: 50, ry: -50, lt: 255, rt: 255)
         var oldStream = FlightStream()

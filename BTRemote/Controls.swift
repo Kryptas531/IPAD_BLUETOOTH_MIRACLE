@@ -17,11 +17,19 @@ struct PressGesture: ViewModifier {
         content.gesture(
             DragGesture(minimumDistance: 0)
                 .updating($touching) { _, state, _ in state = true }
+                .onChanged { _ in
+                    // Deliver down synchronously: a quick down/up can be coalesced
+                    // before SwiftUI renders an onChange of GestureState.
+                    if !pressed {
+                        pressed = true; Haptics.tap(); onPress()
+                    }
+                }
+                .onEnded { _ in
+                    if pressed { pressed = false; onRelease() }
+                }
         )
         .onChange(of: touching) { down in
-            if down, !pressed {
-                pressed = true; Haptics.tap(); onPress()
-            } else if !down, pressed {
+            if !down, pressed {
                 pressed = false; onRelease()
             }
         }

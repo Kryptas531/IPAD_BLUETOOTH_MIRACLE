@@ -62,7 +62,7 @@ struct FlightState: Equatable, Sendable {
 
     mutating func recenter() { lx = 0; ly = 0 }
     mutating func setButton(_ bit: UInt16, pressed: Bool) {
-        if pressed { buttons |= bit & 0xff } else { buttons &= ~bit }
+        if pressed { buttons |= bit & 0x3ff } else { buttons &= ~bit }
     }
 
     func payload(session: UUID, sequence: UInt64) -> Data {
@@ -82,11 +82,39 @@ struct FlightState: Equatable, Sendable {
     }
 }
 
+/// Retain brief edges across the 20 ms heartbeat and at least several game polls.
+/// Deadlines begin at first transmission, not at touch-down while a send is busy.
+struct FlightButtonLatch {
+    private var held: UInt16 = 0
+    private var pending: UInt16 = 0
+    private var deadlines: [Int: TimeInterval] = [:]
+
+    mutating func update(_ buttons: UInt16) {
+        pending |= buttons & ~held & 0x3ff
+        held = buttons & 0x3ff
+    }
+
+    mutating func sample(now: TimeInterval) -> UInt16 {
+        for bit in 0..<10 where pending & (1 << bit) != 0 {
+            deadlines[bit] = now + 0.080
+        }
+        pending = 0
+        var result = held
+        for (bit, deadline) in deadlines {
+            if now < deadline { result |= 1 << bit }
+        }
+        deadlines = deadlines.filter { now < $0.value }
+        return result
+    }
+}
+
 /// Fresh-session recovery: 30 neutral frames at 50 Hz span the old owner's watchdog.
 struct FlightStream {
     private(set) var session = UUID()
     private(set) var sequence: UInt64 = 0
     private var neutralRemaining = 30
+
+    var isArmed: Bool { neutralRemaining == 0 }
 
     mutating func next(_ latest: FlightState) -> Data {
         sequence += 1
@@ -166,6 +194,7 @@ final class FlightSender: ObservableObject {
     private var key: SymmetricKey?
     private var sending = false
     private var latest = FlightState.zero
+    private var buttonLatch = FlightButtonLatch()
 
     func start() {
         stop()
@@ -202,12 +231,19 @@ final class FlightSender: ObservableObject {
         }
     }
 
-    func update(_ state: FlightState) { latest = state }
+    func update(_ state: FlightState) {
+        latest = state
+        buttonLatch.update(state.buttons)
+    }
 
     private func flush() {
         guard !sending, let connection, let key, connection.state == .ready else { return }
         // Neutral takeover spans the previous owner watchdog, including explicit re-arm.
-        var packet = stream.next(latest)
+        var sampled = latest
+        if stream.isArmed {
+            sampled.buttons = buttonLatch.sample(now: ProcessInfo.processInfo.systemUptime)
+        }
+        var packet = stream.next(sampled)
         packet.append(contentsOf: HMAC<SHA256>.authenticationCode(for: packet, using: key))
         sending = true
         let generation = stream.session
@@ -223,6 +259,7 @@ final class FlightSender: ObservableObject {
     func stop() {
         // Best-effort release; receiver's independent 300 ms watchdog is authoritative.
         latest = .zero
+        buttonLatch = FlightButtonLatch()
         flush()
         heartbeat?.cancel()
         heartbeat = nil
