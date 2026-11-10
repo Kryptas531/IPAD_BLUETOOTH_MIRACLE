@@ -123,7 +123,7 @@ struct FlightDeckView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             input("BACK", color: .gray, bit: 64).frame(width: 64, height: 48)
             Spacer(minLength: 0)
             Button("RECENTER") { gyro.recenter() }
