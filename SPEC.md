@@ -1484,6 +1484,14 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
   Verify iOS compilation in unsigned CI; actual grip comfort and simultaneous
   physical touches require iPad acceptance and are not proven by compiler tests.
 
+### 13.4 Independent stick clicks
+- Add explicit L3 and R3 momentary touch controls in the FLIGHT deck. They map
+  independently to Xbox LEFT_THUMB and RIGHT_THUMB, including simultaneous holds.
+- Extend the IGP1 supported button mask to 0x03ff: bits 8/9 are L3/R3. Preserve
+  packet length and bits 0–7; reject every higher bit. Deploy iPad and receiver
+  together: older receivers reject stick-click packets. The 80 ms minimum and
+  independent release/re-arm rules apply to both stick-click controls.
+
 ### 13.3 FLIGHT responsiveness and navigation correction
 - START (Options) and BACK remain independent XInput bits 7 and 6. Preserve a
   short touch for at least 80 ms measured from its first transmitted frame; a
