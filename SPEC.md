@@ -1538,3 +1538,18 @@ MainActivity.kt processIntent/handleChannelIntent/handleContinueWatch and Androi
 yumata/lampa-source commit 86c2b099b19f7058ea304dfa43a8b1e18a2e0492,
 components/full/start/torrents.js and interaction/player.js. Installed version/intent
 resolution and TV-side TorrServer management endpoint remain physical acceptance gates.
+
+### 13.5 FLIGHT navigation isolation and bounded cadence
+- Pin native UIKit EXIT/SETTINGS buttons in a safe-area inset outside gameplay
+  geometry. Camera hit testing is bounded to its allocated rectangle. Navigation
+  stops input before changing mode or opening the root settings sheet; it does not
+  depend on UDP readiness, Bluetooth, re-arm, or SwiftUI hold gestures.
+- Size the gameplay body explicitly from available geometry. In constrained windows
+  only the gameplay body may scroll; navigation remains fixed and reachable.
+- Read newest motion immediately before the single 50 Hz sender tick, not in a
+  separate task. Never enqueue motion samples. Keep at most one network send pending,
+  on a dedicated Network queue; a send pending for 100 ms or a tick stalled for
+  100 ms stops the stream instead of replaying deflected state. Re-arm is explicit.
+- Test layout budgets and stalled cadence/backpressure decisions without hardware.
+  iOS hit-test and end-to-end latency acceptance require an actual device; source
+  analysis and compilation alone do not prove either symptom is resolved.
