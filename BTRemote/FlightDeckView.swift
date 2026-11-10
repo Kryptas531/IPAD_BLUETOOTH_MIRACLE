@@ -19,7 +19,8 @@ struct FlightDeckView: View {
             let key = compact ? 64.0 : 76.0
             let layout = FlightDeckLayout(width: Double(geometry.size.width), height: Double(geometry.size.height))
             ZStack {
-                Color(red: 0.035, green: 0.055, blue: 0.08).allowsHitTesting(false)
+                FlightHorizonView(model: gyro.flightHorizon)
+                    .allowsHitTesting(false).accessibilityHidden(true)
                 VStack(spacing: compact ? 8 : 16) {
                     if landscape {
                         HStack(spacing: 12) {

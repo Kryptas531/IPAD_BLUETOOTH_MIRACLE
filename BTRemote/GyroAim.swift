@@ -224,6 +224,7 @@ struct RacingSourceState: Sendable {
         private let manager = CMMotionManager()
         private var previous: RacingQuaternion?
         let flightSender = FlightSender()
+        let flightHorizon = FlightHorizonModel()
         private var flight = FlightState.zero
         private var flightOrigin: CGPoint?
         private var motionGeneration = UUID()
@@ -346,6 +347,7 @@ struct RacingSourceState: Sendable {
             // SPEC §5.2 L: stop the motion source first, so no sample that is still in
             // flight can write a steering axis after the neutralizing report was sent.
             isRunning = false
+            flightHorizon.clear()
             flightSender.beforeTick = nil
             motionGeneration = UUID()
             manager.stopDeviceMotionUpdates()
@@ -367,6 +369,7 @@ struct RacingSourceState: Sendable {
         /// LX = 0 while every other held field keeps its value (both pedals, the
         /// floating drag, the ability buttons).
         func recenter() {
+            flightHorizon.clear()
             previous = nil
             carryX = 0
             carryY = 0
@@ -484,6 +487,7 @@ struct RacingSourceState: Sendable {
                 return
             }
             if mode == .flight && flightLandscapeRight == nil {
+                flightHorizon.clear()
                 previous = nil
                 return
             }
@@ -495,6 +499,8 @@ struct RacingSourceState: Sendable {
             }
             if mode == .flight {
                 guard let flightLandscapeRight else { return }
+                let angles = FlightMapper.angles(from: p, to: current, landscapeRight: flightLandscapeRight)
+                flightHorizon.update(roll: angles.roll, pitch: angles.pitch)
                 let axes = FlightMapper.axes(from: p, to: current,
                                             landscapeRight: flightLandscapeRight)
                 flight.lx = axes.lx

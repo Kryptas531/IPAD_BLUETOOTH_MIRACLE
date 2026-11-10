@@ -39,8 +39,8 @@ struct FlightCadence {
 
 /// Pure FLIGHT arithmetic and wire format (SPEC §13); no BLE descriptor changes.
 enum FlightMapper {
-    static func axes(from baseline: RacingQuaternion, to current: RacingQuaternion,
-                     landscapeRight: Bool) -> (lx: Int8, ly: Int8) {
+    static func angles(from baseline: RacingQuaternion, to current: RacingQuaternion,
+                     landscapeRight: Bool) -> (roll: Double, pitch: Double) {
         let values = [baseline.w, baseline.x, baseline.y, baseline.z,
                       current.w, current.x, current.y, current.z]
         guard values.allSatisfy({ $0.isFinite }) else { return (0, 0) }
@@ -58,9 +58,32 @@ enum FlightMapper {
         guard norm.isFinite, norm > 1e-9 else { return (0, 0) }
         let scale = 2 * atan2(norm, w) / norm * 180 / Double.pi
         // Landscape's horizontal physical axis is device Y, reversed between orientations.
-        return (RacingMapper.axis(fromAngle: -z * scale),
-                RacingMapper.axis(fromAngle: y * scale * (landscapeRight ? -1 : 1),
-                                  fullLock: 25))
+        return (-z * scale, y * scale * (landscapeRight ? -1 : 1))
+    }
+
+    static func axes(from baseline: RacingQuaternion, to current: RacingQuaternion,
+                     landscapeRight: Bool) -> (lx: Int8, ly: Int8) {
+        let a = angles(from: baseline, to: current, landscapeRight: landscapeRight)
+        return (RacingMapper.axis(fromAngle: a.roll),
+                RacingMapper.axis(fromAngle: a.pitch, fullLock: 25))
+    }
+}
+
+/// Bounded instrument geometry, independent of stick saturation.
+struct FlightHorizonSample: Equatable {
+    let roll: Double
+    let pitch: Double
+    static func make(roll: Double, pitch: Double) -> Self? {
+        guard roll.isFinite, pitch.isFinite else { return nil }
+        return Self(roll: max(-180, min(180, roll)), pitch: max(-60, min(60, pitch)))
+    }
+}
+struct FlightHorizonCadence {
+    private var last: TimeInterval?
+    mutating func accepts(now: TimeInterval) -> Bool {
+        guard last.map({ now - $0 >= 0.040 }) ?? true else { return false }
+        last = now
+        return true
     }
 }
 
