@@ -56,8 +56,9 @@ struct FlightHorizonView: View {
             }
             let radius = min(size.width, size.height) * 0.37
             var bank = Path()
-            for degrees in [-60.0, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60] {
-                let angle = degrees * .pi / 180
+            let bankDegrees: [Double] = [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]
+            for degrees in bankDegrees {
+                let angle = degrees * Double.pi / 180
                 bank.move(to: CGPoint(x: center.x + sin(angle) * radius, y: center.y - cos(angle) * radius))
                 bank.addLine(to: CGPoint(x: center.x + sin(angle) * (radius - 2 * unit),
                                         y: center.y - cos(angle) * (radius - 2 * unit)))
