@@ -1553,3 +1553,19 @@ resolution and TV-side TorrServer management endpoint remain physical acceptance
 - Test layout budgets and stalled cadence/backpressure decisions without hardware.
   iOS hit-test and end-to-end latency acceptance require an actual device; source
   analysis and compilation alone do not prove either symptom is resolved.
+
+### 13.6 Explicit GAME navigation
+- FLIGHT's fixed native GAME MENU opens a selector for TOUCH, GYRO, HYBRID,
+  RACING and FLIGHT. Keep distinct Return to CONTROL and App settings destinations.
+  These are app navigation; START / OPTIONS and BACK remain independent Xbox buttons.
+- Opening the menu or app settings neutralizes all PC input before presentation.
+  FLIGHT remains disarmed on cancellation, selecting FLIGHT again, switching away
+  and back, scene activation, or Bluetooth lifecycle changes until explicit RE-ARM.
+  Never resume a previously held gesture. Other GAME modes retain their existing
+  input rules after selection.
+- Keep GAME navigation visible without BLE, including when TOUCH is selected, so
+  the Wi-Fi-only FLIGHT destination cannot become unreachable. Use a fixed native
+  header outside gameplay gestures and preserve the root app-settings presenter.
+- Verify navigation/disarm policy across mode changes with dependency-free tests,
+  compile in unsigned CI and record exact IPA SHA/version; physical touch acceptance
+  remains required. Deliver as 0.0.9 (9).
