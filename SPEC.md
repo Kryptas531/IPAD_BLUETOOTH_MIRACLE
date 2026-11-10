@@ -1484,6 +1484,21 @@ a driver or claim Steam/Ace Combat compatibility without hardware acceptance.
   Verify iOS compilation in unsigned CI; actual grip comfort and simultaneous
   physical touches require iPad acceptance and are not proven by compiler tests.
 
+### 13.3 FLIGHT responsiveness and navigation correction
+- START (Options) and BACK remain independent XInput bits 7 and 6. Preserve a
+  short touch for at least 80 ms measured from its first transmitted frame; a
+  release clears only that button. Reset pending presses on stop/re-arm.
+- Keep explicit labeled EXIT and SETTINGS actions outside camera touch handling.
+  Opening settings stops gameplay before presenting the sheet; returning requires
+  explicit re-arm. Fit controls within the available safe-area height.
+- FLIGHT polls the newest motion sample at 50 Hz, without enqueueing a MainActor
+  task per sensor callback. Keep other GAME motion modes unchanged.
+- Drain a bounded receiver UDP batch and coalesce analog-only updates, preserving
+  authenticated ownership, sequencing and digital transitions. Watchdog uses fresh
+  monotonic processing time, never a timestamp captured before blocking work.
+  IGP1 has no sender timestamp: remote/network packet age cannot be proven from
+  sequence alone. Hardware latency remains an acceptance gate.
+
 ### TV media actions — TV-only correction
 All actions in the primary TV surface target applications on the paired Android TV,
 not Windows. Remove the Windows HTTPS media bridge controls from this surface; preserve
