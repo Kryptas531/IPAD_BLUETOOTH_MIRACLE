@@ -70,7 +70,11 @@ struct KeyboardView: View {
     #endif
     @State private var pendingGameSettings = false
     @State private var showGameMenu = false
-    @State private var gameNavigation = GameNavigationPolicy()
+    // Root session identity changes on scene/BLE renewal; disarm must survive it.
+    @AppStorage("BTRemote.flightNavigationSuspended") private var flightNavigationSuspended = false
+    private var gameNavigation: GameNavigationPolicy {
+        GameNavigationPolicy(flightNeedsRearm: flightNavigationSuspended)
+    }
     @State private var text = ""
     @State private var sent = ""
     @State private var resetting = false
@@ -108,7 +112,7 @@ struct KeyboardView: View {
             if padMode == .game && flightSelected {
                 #if os(iOS)
                 FlightDeckView(gyro: gyro, gameMenu: presentGameMenu, rearm: {
-                    gameNavigation.explicitlyRearm()
+                    flightNavigationSuspended = false
                     gyro.reconnectFlight()
                 }, settings: presentAppSettings)
                 #else
@@ -574,14 +578,14 @@ struct KeyboardView: View {
         }
 
         @MainActor private func presentGameMenu() {
-            gameNavigation.present()
+            flightNavigationSuspended = true
             gyro.suspendFlightForNavigation()
             releasePCInput()
             showGameMenu = true
         }
 
         @MainActor private func presentAppSettings() {
-            gameNavigation.present()
+            flightNavigationSuspended = true
             gyro.suspendFlightForNavigation()
             releasePCInput()
             openSettings()

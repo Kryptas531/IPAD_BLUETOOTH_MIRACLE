@@ -2,7 +2,8 @@ import Foundation
 
 /// Navigation disarms FLIGHT until an explicit action, independent of persisted mode.
 struct GameNavigationPolicy {
-    private(set) var flightNeedsRearm = false
+    private(set) var flightNeedsRearm: Bool
+    init(flightNeedsRearm: Bool = false) { self.flightNeedsRearm = flightNeedsRearm }
     mutating func present() { flightNeedsRearm = true }
     mutating func explicitlyRearm() { flightNeedsRearm = false }
     func permitsAutomaticStart(_ mode: GameInputMode, presenting: Bool) -> Bool {

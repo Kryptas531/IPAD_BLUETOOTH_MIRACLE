@@ -30,6 +30,8 @@ struct FlightTests {
             expect(navigation.permitsAutomaticStart(.touch, presenting: false), "other selected GAME modes remain available")
             navigation.present()
         }
+        let recreated = GameNavigationPolicy(flightNeedsRearm: navigation.flightNeedsRearm)
+        expect(!recreated.permitsAutomaticStart(.flight, presenting: false), "root scene/BLE identity renewal preserves stored disarm")
         navigation.explicitlyRearm()
         expect(navigation.permitsAutomaticStart(.flight, presenting: false), "explicit RE-ARM enables FLIGHT")
         for (width, height) in [(1024.0, 500.0), (700, 250), (320, 600), (320, 400)] {
