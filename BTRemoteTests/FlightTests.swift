@@ -67,7 +67,8 @@ struct FlightTests {
             expect(layout.bodyHeight >= height, "body fills allocated viewport")
             expect(layout.bodyHeight >= 464, "top 88 + lower 288 + footer 48 + gaps 16 + padding 24 fits")
             expect(layout.bodyWidth >= width, "narrow viewport scrolls instead of crushing buttons")
-            let footerWidth: Double = 64 + 90 + 72 + 64 + 5 * 8
+            // Four controls (64, 90, 72, 64) and five 8 pt gaps.
+            let footerWidth: Double = 330
             expect(footerWidth <= layout.bodyWidth - 24, "footer fits narrow budget without overlap")
             expect(layout.cameraWidth >= 84, "central camera remains usable")
             expect(layout.primaryWidth >= 64, "each shoulder and trigger has large independent target")
